@@ -28,7 +28,12 @@ class Settings(BaseSettings):
     max_workers: int = 2
     
     # File processing
-    allowed_extensions: List[str] = [".csv", ".parquet", ".jsonl"]
+    allowed_extensions: str = ".csv,.parquet,.jsonl"
+    
+    @property
+    def allowed_extensions_list(self) -> List[str]:
+        """Convert comma-separated string to list."""
+        return [ext.strip() for ext in self.allowed_extensions.split(",")]
     temp_dir: str = "/tmp/air-py"
     
     # Go backend communication

@@ -20,7 +20,8 @@ func SetupSQLRoutes(rg *gin.RouterGroup, service *services.AIService, authMiddle
 	sql := rg.Group("/sql")
 	sql.Use(authMiddleware)
 	{
-		sql.POST("", ai.GenerateSQL(service))
+		sql.POST("", ai.GenerateSQLFromIR(service))
+		sql.POST("/generate", ai.GenerateSQL(service))
 	}
 }
 
@@ -36,4 +37,13 @@ func SetupAnalysisRoutes(rg *gin.RouterGroup, service *services.AIService, authM
 // SetupAIToolsRoutes configures AI tools routes
 func SetupAIToolsRoutes(rg *gin.RouterGroup, service *services.AIService, authMiddleware gin.HandlerFunc) {
 	rg.GET("/ai/tools", ai.GetAITools(service))
+}
+
+// SetupChatRoutes configures chat completion routes
+func SetupChatRoutes(rg *gin.RouterGroup, service *services.AIService, authMiddleware gin.HandlerFunc) {
+	chat := rg.Group("/ai/chat")
+	chat.Use(authMiddleware)
+	{
+		chat.POST("/completion", ai.ChatCompletion(service))
+	}
 }

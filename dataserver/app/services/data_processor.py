@@ -228,7 +228,7 @@ class DataProcessor:
     
     def _is_supported_file(self, file_path: Path) -> bool:
         """Check if file has supported extension."""
-        return file_path.suffix.lower() in settings.allowed_extensions
+        return file_path.suffix.lower() in settings.allowed_extensions_list
     
     def _get_file_info(self, file_path: Path) -> Dict[str, Any]:
         """Get file information."""

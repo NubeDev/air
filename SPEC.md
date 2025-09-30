@@ -208,6 +208,18 @@ AIR includes a **private FastAPI microservice** for file dataset processing:
 - **Resource Limits**: Memory, row, and time constraints per request
 - **Path Validation**: Restricted file access within configured base paths
 
+### File-Based AI Learning Sessions
+
+AIR includes a **simplified learning workflow** that demonstrates the full system using file datasets:
+
+- **Interactive Learning**: Users can upload files and interact with AI to understand data
+- **Scope Building**: AI helps build analysis plans through natural language conversation
+- **Query Generation**: SQLCoder generates file processing queries
+- **API Generation**: Successful analyses become reusable API endpoints
+- **Educational Value**: Easy way to understand AIR's capabilities with familiar file data
+
+See [SPEC-FILE-AI.md](./SPEC-FILE-AI.md) for detailed file-based AI learning session specification.
+
 See [SPEC-PY.md](./SPEC-PY.md) for detailed FastAPI microservice specification.
 
 ## Redis Integration & Live Chat
@@ -681,6 +693,7 @@ build-all: cli python-deps
 - Parameterized report execution across multiple datasources and file datasets
 - **Redis-powered WebSocket streaming** for real-time updates and live chat
 - **Live AI chat** with streaming responses and presence management
+- **File-based AI learning sessions** for interactive data exploration and API generation
 - OpenAPI specification with generated server stubs and Go client
 - CLI that uses REST/WS exclusively with multi-datasource support
 - JWT authentication with optional disable flag

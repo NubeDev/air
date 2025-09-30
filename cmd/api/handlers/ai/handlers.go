@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/NubeDev/air/internal/llm"
 	"github.com/NubeDev/air/internal/services"
 	"github.com/NubeDev/air/internal/store"
 	"github.com/gin-gonic/gin"
@@ -37,8 +38,8 @@ func BuildIR(service *services.AIService) gin.HandlerFunc {
 	}
 }
 
-// GenerateSQL generates SQL from IR for a specific datasource
-func GenerateSQL(service *services.AIService) gin.HandlerFunc {
+// GenerateSQLFromIR generates SQL from IR for a specific datasource
+func GenerateSQLFromIR(service *services.AIService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req store.GenerateSQLRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -49,7 +50,7 @@ func GenerateSQL(service *services.AIService) gin.HandlerFunc {
 			return
 		}
 
-		sql, safetyReport, err := service.GenerateSQL(req)
+		sql, safetyReport, err := service.GenerateSQLFromIR(req)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to generate SQL",
@@ -114,6 +115,65 @@ func GetAITools(service *services.AIService) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{
 			"tools": tools,
+		})
+	}
+}
+
+// ChatCompletion handles chat completion requests
+func ChatCompletion(service *services.AIService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Messages []llm.Message `json:"messages"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid request",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		response, err := service.ChatCompletion(req.Messages)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+				Error:   "Chat completion failed",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+// GenerateSQL handles SQL generation requests
+func GenerateSQL(service *services.AIService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Prompt string `json:"prompt"`
+			Schema string `json:"schema"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid request",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		sql, err := service.GenerateSQL(req.Prompt, req.Schema)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+				Error:   "SQL generation failed",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"sql": sql,
 		})
 	}
 }

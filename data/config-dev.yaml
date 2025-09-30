@@ -35,8 +35,8 @@ models:
     api_key: ""                 # optional if not using OpenAI
   ollama:
     host: "http://localhost:11434"
-    llama3_model: "llama3"
-    sqlcoder_model: "sqlcoder"
+    llama3_model: "llama3:latest"
+    sqlcoder_model: "sqlcoder:7b"
   embeddings:
     provider: "openai"          # or "ollama"
     model: "text-embedding-3-small"
