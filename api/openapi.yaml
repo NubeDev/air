@@ -1,0 +1,1049 @@
+openapi: 3.0.3
+info:
+  title: AIR (AI Reporter) API
+  description: |
+    Natural language to SQL reporting system with multi-datasource support.
+    
+    ## Core Workflow
+    Natural Language → Scope (Markdown) → IR (JSON) → SQL (per-engine) → Execute → AI QA → Saved Report
+    
+    ## Multi-Datasource Architecture
+    - SQLite Control-Plane: Stores all AIR metadata
+    - Multiple Analytics Sources: Connect to TimescaleDB/PostgreSQL/MySQL
+    - Read-Only Operations: All analytics databases accessed read-only
+    - Engine-Agnostic IR: Works across all database types
+    - Dialect-Aware SQL: Generate engine-specific SQL
+    
+    ## Authentication
+    JWT-based authentication with configurable secret. Use `--auth disabled` flag for development.
+  version: 0.1.0
+  contact:
+    name: AIR API Support
+    url: https://github.com/NubeDev/air
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:9000
+    description: Development server
+  - url: https://api.air.example.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check server health and status
+      security: []
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/datasources:
+    get:
+      summary: List datasources
+      description: Get all registered datasources with health status
+      tags:
+        - Datasources
+      responses:
+        '200':
+          description: List of datasources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasourcesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create datasource
+      description: Create a new datasource connection
+      tags:
+        - Datasources
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDatasourceRequest'
+      responses:
+        '201':
+          description: Datasource created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/datasources/{id}/health:
+    get:
+      summary: Check datasource health
+      description: Test connection to a specific datasource
+      tags:
+        - Datasources
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Datasource ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Health check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/datasources/{id}:
+    delete:
+      summary: Delete datasource
+      description: Remove a datasource (if unused)
+      tags:
+        - Datasources
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Datasource ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Datasource deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/learn:
+    post:
+      summary: Learn datasource schema
+      description: Introspect a specific datasource to learn its schema
+      tags:
+        - Learn & Schema
+      parameters:
+        - name: datasource_id
+          in: query
+          required: true
+          description: Datasource ID to learn from
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearnDatasourceRequest'
+      responses:
+        '200':
+          description: Learning started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/schema/{datasource_id}:
+    get:
+      summary: Get schema information
+      description: Get schema notes for a specific datasource
+      tags:
+        - Learn & Schema
+      parameters:
+        - name: datasource_id
+          in: path
+          required: true
+          description: Datasource ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Schema information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datasource_id:
+                    type: string
+                  schema_notes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchemaNote'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/scopes:
+    post:
+      summary: Create scope
+      description: Create a new business question scope
+      tags:
+        - Scope & IR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScopeRequest'
+      responses:
+        '201':
+          description: Scope created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/scopes/{id}:
+    get:
+      summary: Get scope
+      description: Retrieve a scope by ID
+      tags:
+        - Scope & IR
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Scope ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Scope details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/scopes/{id}/version:
+    post:
+      summary: Create scope version
+      description: Create a new version of a scope
+      tags:
+        - Scope & IR
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Scope ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScopeVersionRequest'
+      responses:
+        '201':
+          description: Scope version created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeVersion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/ir/build:
+    post:
+      summary: Build IR
+      description: Build Intermediate Representation from scope
+      tags:
+        - Scope & IR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuildIRRequest'
+      responses:
+        '200':
+          description: IR built successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ir:
+                    type: object
+                    description: Intermediate Representation JSON
+                  scope_version_id:
+                    type: integer
+                    format: int64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/sql:
+    post:
+      summary: Generate SQL
+      description: Generate SQL from IR for a specific datasource
+      tags:
+        - SQL Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateSQLRequest'
+      responses:
+        '200':
+          description: SQL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sql:
+                    type: string
+                    description: Generated SQL query
+                  safety_report:
+                    type: object
+                    description: Safety analysis report
+                  datasource_id:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reports:
+    post:
+      summary: Create report
+      description: Create a new report
+      tags:
+        - Reports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportRequest'
+      responses:
+        '201':
+          description: Report created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reports/{key}:
+    get:
+      summary: Get report
+      description: Retrieve a report by key
+      tags:
+        - Reports
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Report key
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reports/{key}/versions:
+    post:
+      summary: Create report version
+      description: Create a new version of a report
+      tags:
+        - Reports
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Report key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportVersionRequest'
+      responses:
+        '201':
+          description: Report version created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportVersion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reports/{key}/run:
+    post:
+      summary: Run report
+      description: Execute a report with parameters
+      tags:
+        - Reports
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Report key
+          schema:
+            type: string
+        - name: datasource_id
+          in: query
+          required: false
+          description: Datasource ID (for portable reports)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunReportRequest'
+      responses:
+        '200':
+          description: Report executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reports/{key}/export:
+    get:
+      summary: Export report
+      description: Export a report in various formats
+      tags:
+        - Reports
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Report key
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          description: Export format
+          schema:
+            type: string
+            enum: [json, yaml]
+            default: json
+      responses:
+        '200':
+          description: Report exported successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Exported report data
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/runs/{run_id}/analyze:
+    post:
+      summary: Analyze report run
+      description: Analyze a report run with AI
+      tags:
+        - Analysis
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Report run ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRunRequest'
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportAnalysis'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/ai/tools:
+    get:
+      summary: Get AI tools
+      description: Get available AI tools and function definitions
+      tags:
+        - AI Tools
+      responses:
+        '200':
+          description: AI tools list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        parameters:
+                          type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/ws:
+    get:
+      summary: WebSocket connection
+      description: Establish WebSocket connection for real-time updates
+      tags:
+        - WebSocket
+      security: []
+      responses:
+        '101':
+          description: WebSocket connection established
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    # Response Models
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        auth_enabled:
+          type: boolean
+          example: false
+        datasources:
+          type: integer
+          example: 3
+
+    DatasourceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "ts-dev"
+        kind:
+          type: string
+          enum: [postgres, timescaledb, mysql]
+          example: "timescaledb"
+        display_name:
+          type: string
+          example: "Timescale Dev"
+        is_default:
+          type: boolean
+          example: true
+        health_status:
+          type: string
+          enum: [healthy, unhealthy, unknown]
+          example: "healthy"
+        last_health:
+          type: string
+          format: date-time
+        error:
+          type: string
+          example: "connection refused"
+
+    DatasourcesResponse:
+      type: object
+      properties:
+        datasources:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasourceResponse'
+
+    HealthCheckResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: "healthy"
+        error:
+          type: string
+          example: "connection refused"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid request"
+        details:
+          type: string
+          example: "Missing required field"
+
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    # Request Models
+    CreateDatasourceRequest:
+      type: object
+      required: [id, kind, dsn, display_name]
+      properties:
+        id:
+          type: string
+          example: "ts-dev"
+        kind:
+          type: string
+          enum: [postgres, timescaledb, mysql]
+          example: "timescaledb"
+        dsn:
+          type: string
+          example: "postgres://user:pass@localhost:5432/energy?sslmode=disable"
+        display_name:
+          type: string
+          example: "Timescale Dev"
+        is_default:
+          type: boolean
+          example: false
+
+    LearnDatasourceRequest:
+      type: object
+      required: [datasource_id]
+      properties:
+        datasource_id:
+          type: string
+          example: "ts-dev"
+        schemas:
+          type: array
+          items:
+            type: string
+          example: ["public", "analytics"]
+
+    CreateScopeRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: "Energy Usage Analysis"
+
+    CreateScopeVersionRequest:
+      type: object
+      required: [scope_md]
+      properties:
+        scope_md:
+          type: string
+          example: "# Energy Usage Analysis\n\nAnalyze daily energy consumption..."
+
+    BuildIRRequest:
+      type: object
+      required: [scope_version_id]
+      properties:
+        scope_version_id:
+          type: integer
+          format: int64
+          example: 1
+
+    GenerateSQLRequest:
+      type: object
+      required: [ir, datasource_id]
+      properties:
+        ir:
+          type: object
+          description: Intermediate Representation JSON
+        datasource_id:
+          type: string
+          example: "ts-dev"
+
+    CreateReportRequest:
+      type: object
+      required: [key, title]
+      properties:
+        key:
+          type: string
+          example: "daily_energy"
+        title:
+          type: string
+          example: "Daily Energy Usage Report"
+        owner:
+          type: string
+          example: "admin"
+
+    CreateReportVersionRequest:
+      type: object
+      required: [scope_version_id, def_json]
+      properties:
+        scope_version_id:
+          type: integer
+          format: int64
+          example: 1
+        datasource_id:
+          type: string
+          example: "ts-dev"
+        def_json:
+          type: string
+          description: Report definition JSON
+
+    RunReportRequest:
+      type: object
+      required: [params]
+      properties:
+        params:
+          type: object
+          description: Report parameters
+          example:
+            dateFrom: "2025-01-01T00:00:00Z"
+            dateTo: "2025-01-31T23:59:59Z"
+        datasource_id:
+          type: string
+          example: "ts-dev"
+
+    AnalyzeRunRequest:
+      type: object
+      properties:
+        model_used:
+          type: string
+          example: "gpt-4o-mini"
+        rubric_version:
+          type: string
+          example: "1.0"
+
+    # Database Models
+    Datasource:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        dsn:
+          type: string
+        display_name:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Scope:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, approved, archived]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ScopeVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        scope_id:
+          type: integer
+          format: int64
+        version:
+          type: integer
+        scope_md:
+          type: string
+        ir_json:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SchemaNote:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        datasource_id:
+          type: string
+        object:
+          type: string
+        chunk:
+          type: integer
+        md:
+          type: string
+        md_hash:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Report:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        key:
+          type: string
+        title:
+          type: string
+        owner:
+          type: string
+        archived:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ReportVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        report_id:
+          type: integer
+          format: int64
+        version:
+          type: integer
+        scope_version_id:
+          type: integer
+          format: int64
+        datasource_id:
+          type: string
+        def_json:
+          type: string
+        checksum:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, archived]
+        created_at:
+          type: string
+          format: date-time
+
+    ReportRun:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        report_id:
+          type: integer
+          format: int64
+        report_version_id:
+          type: integer
+          format: int64
+        datasource_id:
+          type: string
+        params_json:
+          type: string
+        sql_text:
+          type: string
+        row_count:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [running, completed, failed]
+        error_text:
+          type: string
+
+    ReportAnalysis:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        run_id:
+          type: integer
+          format: int64
+        model_used:
+          type: string
+        rubric_version:
+          type: string
+        verdict_json:
+          type: string
+        analysis_md:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Datasources
+    description: Datasource management
+  - name: Learn & Schema
+    description: Database learning and schema introspection
+  - name: Scope & IR
+    description: Scope management and Intermediate Representation
+  - name: SQL Generation
+    description: SQL generation from IR
+  - name: Reports
+    description: Report management and execution
+  - name: Analysis
+    description: AI analysis of report runs
+  - name: AI Tools
+    description: AI tools and function definitions
+  - name: WebSocket
+    description: Real-time WebSocket connections

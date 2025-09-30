@@ -1,0 +1,53 @@
+server:
+  host: 0.0.0.0
+  port: 9000
+  ws_enabled: true
+  auth:
+    enabled: true
+    jwt_secret: "your-secret-key-change-in-production"
+    token_expiry: "24h"
+
+control_plane:            # AIR's own metadata store (GORM -> SQLite)
+  driver: sqlite          # fixed to sqlite for MVP
+  dsn: "file:air.db?_fk=1"
+
+analytics_sources:        # list of external, READ-ONLY engines
+  - id: "ts-dev"          # unique key
+    kind: "timescaledb"   # "timescaledb" | "postgres" | "mysql"
+    dsn: "postgres://user:pass@localhost:5432/energy?sslmode=disable"
+    display_name: "Timescale Dev"
+    default: true
+  - id: "pg-sales"
+    kind: "postgres"
+    dsn: "postgres://reporter:***@pg:5432/sales"
+    display_name: "Sales Warehouse (PG)"
+  - id: "mysql-ops"
+    kind: "mysql"
+    dsn: "user:pass@tcp(localhost:3306)/ops"
+    display_name: "Ops MySQL"
+
+models:
+  chat_primary: "openai"        # openai | llama3
+  chat_backup:  "llama3"
+  sql_primary:  "sqlcoder"
+  openai:
+    model: "gpt-4o-mini"
+    api_key: ""                 # optional if not using OpenAI
+  ollama:
+    host: "http://localhost:11434"
+    llama3_model: "llama3"
+    sqlcoder_model: "sqlcoder"
+  embeddings:
+    provider: "openai"          # or "ollama"
+    model: "text-embedding-3-small"
+
+safety:
+  default_row_limit: 5000
+  max_row_limit: 100000
+  enforce_time_filter_days: 370
+
+telemetry:
+  level: "info"
+  format: "console"        # json | console
+  time_format: "15:04:05"  # Go time format
+  color: true              # Enable colored output
