@@ -126,6 +126,51 @@ type ReportAnalysis struct {
 	Run ReportRun `gorm:"foreignKey:RunID" json:"run,omitempty"`
 }
 
+// Session represents a file-based AI learning session
+type Session struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Name           string    `gorm:"not null" json:"name"`
+	FilePath       string    `gorm:"not null" json:"file_path"`
+	Status         string    `gorm:"default:'active'" json:"status"` // "active", "completed", "archived"
+	DatasourceType string    `gorm:"default:'file'" json:"datasource_type"`
+	Options        string    `gorm:"type:text" json:"options"` // JSON string
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// GeneratedReport represents a reusable API generated from a successful analysis
+type GeneratedReport struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Name           string    `gorm:"not null" json:"name"`
+	Description    string    `json:"description"`
+	FilePath       string    `gorm:"not null" json:"file_path"`
+	ScopeJSON      string    `gorm:"type:text" json:"scope_json"`
+	QueryPlanJSON  string    `gorm:"type:text" json:"query_plan_json"`
+	ParametersJSON string    `gorm:"type:text" json:"parameters_json"`
+	SessionID      *uint     `json:"session_id"`
+	Status         string    `gorm:"default:'active'" json:"status"` // "active", "archived"
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+
+	// Relationships
+	Session *Session `gorm:"foreignKey:SessionID" json:"session,omitempty"`
+}
+
+// ReportExecution represents an execution of a generated report
+type ReportExecution struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	ReportID        uint      `gorm:"not null" json:"report_id"`
+	ParametersJSON  string    `gorm:"type:text" json:"parameters_json"`
+	ResultsJSON     string    `gorm:"type:text" json:"results_json"`
+	ExecutedAt      time.Time `json:"executed_at"`
+	ExecutionTimeMs int       `json:"execution_time_ms"`
+	Status          string    `gorm:"default:'completed'" json:"status"` // "completed", "failed"
+	ErrorMessage    string    `gorm:"type:text" json:"error_message"`
+
+	// Relationships
+	Report GeneratedReport `gorm:"foreignKey:ReportID" json:"report,omitempty"`
+}
+
 // ============================================================================
 // API Request/Response Models
 // ============================================================================
@@ -236,6 +281,30 @@ type AnalyzeRunRequest struct {
 	RubricVersion string `json:"rubric_version,omitempty"`
 }
 
+// StartSessionRequest represents the request to start a new learning session
+type StartSessionRequest struct {
+	FilePath       string                 `json:"file_path" binding:"required"`
+	SessionName    string                 `json:"session_name" binding:"required"`
+	DatasourceType string                 `json:"datasource_type" binding:"required"`
+	Options        map[string]interface{} `json:"options,omitempty"`
+}
+
+// CreateGeneratedReportRequest represents the request to create a generated report
+type CreateGeneratedReportRequest struct {
+	Name           string `json:"name" binding:"required"`
+	Description    string `json:"description"`
+	FilePath       string `json:"file_path" binding:"required"`
+	ScopeJSON      string `json:"scope_json" binding:"required"`
+	QueryPlanJSON  string `json:"query_plan_json" binding:"required"`
+	ParametersJSON string `json:"parameters_json" binding:"required"`
+	SessionID      *uint  `json:"session_id,omitempty"`
+}
+
+// ExecuteReportRequest represents the request to execute a generated report
+type ExecuteReportRequest struct {
+	Parameters map[string]interface{} `json:"parameters" binding:"required"`
+}
+
 // ============================================================================
 // Database Migration
 // ============================================================================
@@ -252,5 +321,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&ReportRun{},
 		&ReportSample{},
 		&ReportAnalysis{},
+		&Session{},
+		&GeneratedReport{},
+		&ReportExecution{},
 	)
 }

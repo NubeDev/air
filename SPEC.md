@@ -496,10 +496,14 @@ Stored in `report_versions.def_json`:
 
 #### Reports
 - `POST /v1/reports` → create report (key/title)
-- `POST /v1/reports/{key}/versions` → upload def_json (with optional datasource_id)
-- `POST /v1/reports/{key}/run` → execute with parameters
+- `GET /v1/reports` → list all reports
+- `GET /v1/reports/{id}` → get report details by ID
+- `POST /v1/reports/{id}/versions` → upload def_json (with optional datasource_id)
+- `POST /v1/reports/{id}/execute` → execute with parameters
   - Bound reports: use stored datasource_id
   - Portable reports: require ?datasource_id=... parameter
+- `PUT /v1/reports/{id}` → update report
+- `DELETE /v1/reports/{id}` → delete report
 
 #### Analysis & Export
 - `POST /v1/runs/{run_id}/analyze` → AI QA verdict

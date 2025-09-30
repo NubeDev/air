@@ -336,7 +336,7 @@ paths:
 
   /v1/sql:
     post:
-      summary: Generate SQL
+      summary: Generate SQL from IR
       description: Generate SQL from IR for a specific datasource
       tags:
         - SQL Generation
@@ -345,7 +345,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/GenerateSQLRequest'
+              $ref: '#/components/schemas/GenerateSQLFromIRRequest'
       responses:
         '200':
           description: SQL generated successfully
@@ -395,19 +395,43 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/reports/{key}:
+  /v1/reports:
+    get:
+      summary: List reports
+      description: Get all generated reports
+      tags:
+        - Reports
+      responses:
+        '200':
+          description: List of reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reports:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reports/{id}:
     get:
       summary: Get report
-      description: Retrieve a report by key
+      description: Retrieve a report by ID
       tags:
         - Reports
       parameters:
-        - name: key
+        - name: id
           in: path
           required: true
-          description: Report key
+          description: Report ID
           schema:
-            type: string
+            type: integer
+            format: int64
       responses:
         '200':
           description: Report details
@@ -421,20 +445,81 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update report
+      description: Update an existing report
+      tags:
+        - Reports
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Report ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReportRequest'
+      responses:
+        '200':
+          description: Report updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete report
+      description: Delete a report
+      tags:
+        - Reports
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Report ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Report deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
-  /v1/reports/{key}/versions:
+  /v1/reports/{id}/versions:
     post:
       summary: Create report version
       description: Create a new version of a report
       tags:
         - Reports
       parameters:
-        - name: key
+        - name: id
           in: path
           required: true
-          description: Report key
+          description: Report ID
           schema:
-            type: string
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -455,19 +540,20 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/reports/{key}/run:
+  /v1/reports/{id}/execute:
     post:
-      summary: Run report
+      summary: Execute report
       description: Execute a report with parameters
       tags:
         - Reports
       parameters:
-        - name: key
+        - name: id
           in: path
           required: true
-          description: Report key
+          description: Report ID
           schema:
-            type: string
+            type: integer
+            format: int64
         - name: datasource_id
           in: query
           required: false
@@ -494,19 +580,20 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/reports/{key}/export:
+  /v1/reports/{id}/export:
     get:
       summary: Export report
       description: Export a report in various formats
       tags:
         - Reports
       parameters:
-        - name: key
+        - name: id
           in: path
           required: true
-          description: Report key
+          description: Report ID
           schema:
-            type: string
+            type: integer
+            format: int64
         - name: format
           in: query
           required: false
@@ -589,6 +676,62 @@ paths:
                           type: string
                         parameters:
                           type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/ai/chat/completion:
+    post:
+      summary: Chat completion
+      description: Generate chat completions using AI models
+      tags:
+        - AI Tools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: Chat completion response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/sql/generate:
+    post:
+      summary: Generate SQL
+      description: Generate SQL queries using AI models
+      tags:
+        - SQL Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateSQLRequest'
+      responses:
+        '200':
+          description: SQL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sql:
+                    type: string
+                    description: Generated SQL query
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -756,7 +899,7 @@ components:
           format: int64
           example: 1
 
-    GenerateSQLRequest:
+    GenerateSQLFromIRRequest:
       type: object
       required: [ir, datasource_id]
       properties:
@@ -766,6 +909,55 @@ components:
         datasource_id:
           type: string
           example: "ts-dev"
+
+    ChatCompletionRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          description: Array of chat messages
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        model:
+          type: string
+          example: "llama3:latest"
+        message:
+          $ref: '#/components/schemas/ChatMessage'
+        done:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+          example: "user"
+        content:
+          type: string
+          example: "What is the energy consumption trend?"
+
+    GenerateSQLRequest:
+      type: object
+      required: [prompt, schema]
+      properties:
+        prompt:
+          type: string
+          example: "Show monthly energy consumption by site"
+        schema:
+          type: string
+          example: "CREATE TABLE energy (timestamp TIMESTAMP, site_id TEXT, kwh FLOAT)"
 
     CreateReportRequest:
       type: object
@@ -780,6 +972,22 @@ components:
         owner:
           type: string
           example: "admin"
+
+    UpdateReportRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "Updated Daily Energy Usage Report"
+        description:
+          type: string
+          example: "Updated description"
+        owner:
+          type: string
+          example: "admin"
+        archived:
+          type: boolean
+          example: false
 
     CreateReportVersionRequest:
       type: object
@@ -904,20 +1112,30 @@ components:
         id:
           type: integer
           format: int64
+          example: 123
         key:
           type: string
+          example: "daily_energy"
         title:
           type: string
+          example: "Daily Energy Usage Report"
+        description:
+          type: string
+          example: "Daily energy consumption analysis by site"
         owner:
           type: string
+          example: "admin"
         archived:
           type: boolean
+          example: false
         created_at:
           type: string
           format: date-time
+          example: "2024-01-01T00:00:00Z"
         updated_at:
           type: string
           format: date-time
+          example: "2024-01-01T00:00:00Z"
 
     ReportVersion:
       type: object

@@ -348,7 +348,7 @@ POST /v1/sessions/{session_id}/save
 # Response
 {
   "api_id": "api_303",
-  "endpoint": "/v1/apis/energy_monthly_trends",
+  "endpoint": "/v1/reports/303",
   "documentation": {
     "description": "Get monthly energy consumption trends by site",
     "parameters": {
@@ -416,9 +416,9 @@ POST /v1/sessions/{session_id}/save
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/v1/sessions/{id}/save` | Save as reusable API |
-| GET | `/v1/apis` | List generated APIs |
-| GET | `/v1/apis/{id}` | Get API details |
-| POST | `/v1/apis/{id}/execute` | Execute saved API |
+| GET | `/v1/reports` | List generated APIs |
+| GET | `/v1/reports/{id}` | Get API details |
+| POST | `/v1/reports/{id}/execute` | Execute saved API |
 
 ## Python FastAPI Integration
 

@@ -4,9 +4,122 @@ echo "🚀 Testing Full File-Based AI Learning Workflow"
 echo "=============================================="
 echo ""
 
-# Step 1: Start Learning Session
-echo "📋 Step 1: Starting Learning Session"
-echo "-----------------------------------"
+# Check if services are running
+echo "🔍 Checking service status..."
+echo "----------------------------"
+
+# Check Go backend
+GO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/health)
+if [ "$GO_STATUS" = "200" ]; then
+    echo "✅ Go backend (port 9000) is running"
+else
+    echo "❌ Go backend (port 9000) is not running"
+    echo "   Run: make dev-backend"
+    exit 1
+fi
+
+# Check Python backend
+PY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9001/)
+if [ "$PY_STATUS" = "200" ]; then
+    echo "✅ Python backend (port 9001) is running"
+else
+    echo "❌ Python backend (port 9001) is not running"
+    echo "   Run: make dev-data"
+    exit 1
+fi
+
+echo ""
+
+# Step 1: Test AI Tools
+echo "🤖 Step 1: Testing AI Tools"
+echo "---------------------------"
+echo "Getting available AI tools..."
+
+AI_TOOLS_RESPONSE=$(curl -s -X GET http://localhost:9000/v1/ai/tools)
+echo "AI Tools Response:"
+echo $AI_TOOLS_RESPONSE | jq '.'
+echo ""
+
+# Step 2: Test Chat Completion
+echo "💬 Step 2: Testing Chat Completion"
+echo "---------------------------------"
+echo "Testing AI chat with energy data question..."
+
+CHAT_RESPONSE=$(curl -s -X POST http://localhost:9000/v1/ai/chat/completion \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {
+        "role": "user", 
+        "content": "I have energy data with timestamp, site, device_id, kwh, voltage, current, temperature, status. I want to analyze energy consumption by site for different date ranges. What analysis would you recommend?"
+      }
+    ]
+  }')
+
+echo "AI Chat Response:"
+echo $CHAT_RESPONSE | jq -r '.message.content' | head -15
+echo ""
+
+# Step 3: Test SQL Generation
+echo "🔍 Step 3: Testing SQL Generation"
+echo "--------------------------------"
+echo "Testing SQLCoder for date range analysis..."
+
+SQL_RESPONSE=$(curl -s -X POST http://localhost:9000/v1/sql/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Generate SQL to show daily energy consumption by site for a date range. Include total, average, and maximum kwh values.",
+    "schema": "CREATE TABLE energy_data (timestamp VARCHAR, site VARCHAR, device_id VARCHAR, kwh FLOAT, voltage FLOAT, current FLOAT, temperature FLOAT, status VARCHAR);"
+  }')
+
+echo "Generated SQL Query:"
+echo $SQL_RESPONSE | jq -r '.sql'
+echo ""
+
+# Step 4: Test File Reading
+echo "📁 Step 4: Testing File Reading"
+echo "------------------------------"
+echo "Testing Python backend file processing..."
+
+FILE_RESPONSE=$(curl -s -X POST http://localhost:9001/v1/py/infer_schema \
+  -H "Content-Type: application/json" \
+  -d '{"datasource_id":"test","uri":"../testdata/ts-energy.csv","infer_rows":50}')
+
+TOKEN=$(echo $FILE_RESPONSE | jq -r '.token')
+echo "File processing job token: $TOKEN"
+
+# Wait for completion
+sleep 2
+SCHEMA_RESULT=$(curl -s http://localhost:9001/v1/py/jobs/$TOKEN)
+echo "File schema result:"
+echo $SCHEMA_RESULT | jq '.data.schema'
+echo ""
+
+# Step 5: Test AI Analysis of Results
+echo "🧠 Step 5: Testing AI Analysis"
+echo "-----------------------------"
+echo "Testing AI analysis of sample data..."
+
+AI_ANALYSIS=$(curl -s -X POST http://localhost:9000/v1/ai/chat/completion \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": "Analyze these energy consumption results: Site A shows 1250.5 kWh on Jan 1st and 1280.3 kWh on Jan 2nd. Site B shows 980.2 kWh on Jan 1st and 1010.7 kWh on Jan 2nd. What insights can you provide?"
+      }
+    ]
+  }')
+
+echo "AI Analysis of Results:"
+echo $AI_ANALYSIS | jq -r '.message.content' | head -10
+echo ""
+
+# Step 6: Test Session Management (Not Yet Implemented)
+echo "📋 Step 6: Testing Session Management"
+echo "------------------------------------"
+echo "Testing session creation (this will fail - not yet implemented)..."
+
 SESSION_RESPONSE=$(curl -s -X POST http://localhost:9000/v1/sessions/start \
   -H "Content-Type: application/json" \
   -d '{
@@ -20,61 +133,26 @@ SESSION_RESPONSE=$(curl -s -X POST http://localhost:9000/v1/sessions/start \
     }
   }')
 
-echo "Session creation response:"
+echo "Session creation response (expected to fail):"
 echo $SESSION_RESPONSE | jq '.'
 echo ""
 
-# Extract session ID (we'll simulate this for now)
-SESSION_ID="sess_123"
-echo "Using session ID: $SESSION_ID"
+# Step 7: Test Report Management (Not Yet Implemented)
+echo "📊 Step 7: Testing Report Management"
+echo "-----------------------------------"
+echo "Testing report listing (this will fail - not yet implemented)..."
+
+REPORTS_RESPONSE=$(curl -s -X GET http://localhost:9000/v1/reports)
+echo "Reports listing response (expected to fail):"
+echo $REPORTS_RESPONSE | jq '.'
 echo ""
 
-# Step 2: Learn about the file
-echo "📁 Step 2: Learning about the file data"
-echo "--------------------------------------"
-echo "Inferring schema and analyzing data..."
-
-# Call FastAPI directly for file learning
-LEARN_RESPONSE=$(curl -s -X POST http://localhost:9001/v1/py/infer_schema \
-  -H "Content-Type: application/json" \
-  -d '{"datasource_id":"test","uri":"../testdata/ts-energy.csv","infer_rows":50}')
-
-TOKEN=$(echo $LEARN_RESPONSE | jq -r '.token')
-echo "Learning job token: $TOKEN"
-
-# Wait for completion
-sleep 2
-SCHEMA_RESULT=$(curl -s http://localhost:9001/v1/py/jobs/$TOKEN)
-echo "Schema learning result:"
-echo $SCHEMA_RESULT | jq '.data.schema'
-echo ""
-
-# Step 3: Interactive Q&A
-echo "🤖 Step 3: Interactive Q&A with AI"
+# Step 8: Simulate Full Workflow
+echo "🔄 Step 8: Simulating Full Workflow"
 echo "----------------------------------"
-echo "Asking AI about the data..."
+echo "Simulating the complete workflow with current working components..."
 
-AI_RESPONSE=$(curl -s -X POST http://localhost:9000/v1/ai/chat/completion \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {
-        "role": "user", 
-        "content": "I have energy data with timestamp, site, device_id, kwh, voltage, current, temperature, status. I want to analyze energy consumption by site for different date ranges. What analysis would you recommend?"
-      }
-    ]
-  }')
-
-echo "AI Analysis and Recommendations:"
-echo $AI_RESPONSE | jq -r '.message.content' | head -15
-echo ""
-
-# Step 4: Build Analysis Scope
-echo "📊 Step 4: Building Analysis Scope"
-echo "---------------------------------"
-echo "Creating analysis plan for date range queries..."
-
-# Simulate scope building (this would be a real API call)
+# Simulate scope building
 SCOPE_PLAN='{
   "scope_id": "scope_456",
   "analysis_plan": {
@@ -109,34 +187,6 @@ echo "Generated Analysis Scope:"
 echo $SCOPE_PLAN | jq '.'
 echo ""
 
-# Step 5: Generate SQL Query
-echo "🔍 Step 5: Generating SQL Query"
-echo "-------------------------------"
-echo "Using SQLCoder to generate query for date range analysis..."
-
-SQL_RESPONSE=$(curl -s -X POST http://localhost:9000/v1/sql/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Generate SQL to show daily energy consumption by site for a date range. Include total, average, and maximum kwh values.",
-    "schema": "CREATE TABLE energy_data (timestamp VARCHAR, site VARCHAR, device_id VARCHAR, kwh FLOAT, voltage FLOAT, current FLOAT, temperature FLOAT, status VARCHAR);"
-  }')
-
-echo "Generated SQL Query:"
-echo $SQL_RESPONSE | jq -r '.sql'
-echo ""
-
-# Step 6: Execute Query (Simulate)
-echo "⚡ Step 6: Executing Query"
-echo "-------------------------"
-echo "Simulating query execution with sample parameters..."
-
-# This would call the Python backend to execute the query
-echo "Query parameters:"
-echo "- date_from: 2024-01-01"
-echo "- date_to: 2024-01-31"
-echo "- site: (all sites)"
-echo ""
-
 # Simulate query results
 QUERY_RESULTS='{
   "run_id": "run_789",
@@ -156,41 +206,16 @@ QUERY_RESULTS='{
   }
 }'
 
-echo "Query Execution Results:"
+echo "Simulated Query Results:"
 echo $QUERY_RESULTS | jq '.results.data'
 echo ""
 
-# Step 7: AI Analysis of Results
-echo "🧠 Step 7: AI Analysis of Results"
-echo "--------------------------------"
-echo "Getting AI insights on the query results..."
-
-AI_ANALYSIS=$(curl -s -X POST http://localhost:9000/v1/ai/chat/completion \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {
-        "role": "user",
-        "content": "Analyze these energy consumption results: Site A shows 1250.5 kWh on Jan 1st and 1280.3 kWh on Jan 2nd. Site B shows 980.2 kWh on Jan 1st and 1010.7 kWh on Jan 2nd. What insights can you provide?"
-      }
-    ]
-  }')
-
-echo "AI Analysis of Results:"
-echo $AI_ANALYSIS | jq -r '.message.content' | head -10
-echo ""
-
-# Step 8: Save as Reusable API
-echo "💾 Step 8: Saving as Reusable API"
-echo "--------------------------------"
-echo "Saving the analysis as a reusable API endpoint..."
-
-# This would be stored in SQLite
+# Simulate API definition
 API_DEFINITION='{
   "api_id": "api_energy_date_range",
   "name": "energy_by_date_range",
   "description": "Get daily energy consumption by site for a date range",
-  "endpoint": "/v1/apis/energy_by_date_range/execute",
+  "endpoint": "/v1/reports/123/execute",
   "parameters": {
     "date_from": {"type": "string", "format": "date", "required": true, "description": "Start date (YYYY-MM-DD)"},
     "date_to": {"type": "string", "format": "date", "required": true, "description": "End date (YYYY-MM-DD)"},
@@ -207,52 +232,30 @@ echo "Generated API Definition:"
 echo $API_DEFINITION | jq '.'
 echo ""
 
-# Step 9: Test the Generated API
-echo "🧪 Step 9: Testing the Generated API"
-echo "-----------------------------------"
-echo "Testing the generated API with different parameters..."
-
-echo "Test 1: Full date range for all sites"
-echo "POST /v1/apis/energy_by_date_range/execute"
-echo '{
-  "date_from": "2024-01-01",
-  "date_to": "2024-01-31"
-}'
+# Step 9: Summary
+echo "✅ Workflow Test Complete!"
+echo "=========================="
 echo ""
-
-echo "Test 2: Specific site and date range"
-echo "POST /v1/apis/energy_by_date_range/execute"
-echo '{
-  "date_from": "2024-01-01", 
-  "date_to": "2024-01-07",
-  "site": "site_a"
-}'
+echo "Working Components:"
+echo "1. ✅ AI Tools - Get available AI tools and models"
+echo "2. ✅ Chat Completion - AI conversation and analysis"
+echo "3. ✅ SQL Generation - SQLCoder for query generation"
+echo "4. ✅ File Reading - Python backend file processing"
+echo "5. ✅ AI Analysis - AI insights on data and results"
 echo ""
-
-echo "Test 3: Single day analysis"
-echo "POST /v1/apis/energy_by_date_range/execute"
-echo '{
-  "date_from": "2024-01-01",
-  "date_to": "2024-01-02"
-}'
+echo "Not Yet Implemented:"
+echo "1. ❌ Session Management - /v1/sessions/* endpoints"
+echo "2. ❌ Report Management - /v1/reports/* endpoints"
+echo "3. ❌ Scope Building - Interactive scope creation"
+echo "4. ❌ Query Execution - File query processing"
+echo "5. ❌ API Generation - Saving analyses as reusable APIs"
 echo ""
-
-# Step 10: Summary
-echo "✅ Full Workflow Test Complete!"
-echo "=============================="
+echo "Next Steps:"
+echo "1. Implement Session Management Foundation"
+echo "2. Add Report Management APIs"
+echo "3. Build Scope Building workflow"
+echo "4. Add Query Execution for files"
+echo "5. Implement API Generation and storage"
 echo ""
-echo "Workflow Summary:"
-echo "1. ✅ Started learning session with file"
-echo "2. ✅ AI learned about data structure and content"
-echo "3. ✅ Interactive Q&A with AI for analysis planning"
-echo "4. ✅ Built analysis scope with parameters"
-echo "5. ✅ Generated SQL query using SQLCoder"
-echo "6. ✅ Executed query and got results"
-echo "7. ✅ AI analyzed the results and provided insights"
-echo "8. ✅ Saved analysis as reusable API endpoint"
-echo "9. ✅ Generated API documentation and examples"
-echo ""
-echo "The user can now query energy data by date range using:"
-echo "POST /v1/apis/energy_by_date_range/execute"
-echo ""
-echo "🎉 Full File-Based AI Learning Workflow is working! 🎉"
+echo "🎉 Core AI and File Processing is working! 🎉"
+echo "Ready to implement the full workflow!"

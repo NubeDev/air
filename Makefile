@@ -13,10 +13,13 @@ check:
 
 # Development targets
 dev-backend:
-	@echo "Killing existing process on port 9000..."
+	@echo "Killing existing processes on port 9000..."
+	@-pkill -f "go run ./cmd/api" 2>/dev/null || true
+	@-pkill -f "bin/air" 2>/dev/null || true
 	@-fuser -k 9000/tcp 2>/dev/null || true
+	@sleep 1
 	@echo "Starting AIR backend server..."
-	go run ./cmd/api --data data --config config-dev.yaml --auth &
+	go run ./cmd/api --data data --config config-dev.yaml --auth disabled &
 	@echo "Go backend server started in background. Use 'make logs-backend' to view logs."
 
 logs-backend:
@@ -27,8 +30,10 @@ dev-ui:
 	@echo "UI not implemented yet"
 
 dev-data:
-	@echo "Killing existing process on port 9001..."
+	@echo "Killing existing processes on port 9001..."
+	@-pkill -f "python -m app.main" 2>/dev/null || true
 	@-fuser -k 9001/tcp 2>/dev/null || true
+	@sleep 1
 	@echo "Starting AIR-Py FastAPI data processing server..."
 	cd dataserver && bash -c "source venv/bin/activate && python -m app.main" &
 	@echo "FastAPI server started in background. Use 'make logs-data' to view logs."
@@ -40,9 +45,17 @@ logs-data:
 # Combined development targets
 dev-all:
 	@echo "Starting both Go backend and FastAPI servers..."
+	@make clean-ports
 	@make dev-backend
 	@make dev-data
 	@echo "Both servers started. Use 'make logs-all' to view combined logs."
+
+# Force restart everything
+restart:
+	@echo "Force restarting all services..."
+	@make clean-ports
+	@sleep 2
+	@make dev-all
 
 logs-all:
 	@echo "Tailing both server logs..."
@@ -83,9 +96,13 @@ clean:
 	rm -f air.db
 
 clean-ports:
-	@echo "Killing processes on ports 9000 and 9001..."
+	@echo "Killing all AIR processes..."
+	@-pkill -f "go run ./cmd/api" 2>/dev/null || true
+	@-pkill -f "bin/air" 2>/dev/null || true
+	@-pkill -f "python -m app.main" 2>/dev/null || true
 	@-fuser -k 9000/tcp 2>/dev/null || true
 	@-fuser -k 9001/tcp 2>/dev/null || true
+	@echo "All AIR processes stopped"
 
 # Test targets
 test:
@@ -119,6 +136,8 @@ help:
 	@echo "  logs-data    - Tail FastAPI server logs"
 	@echo "  dev-all      - Start both Go backend and FastAPI servers"
 	@echo "  logs-all     - Tail both server logs"
+	@echo "  restart      - Force restart all services (kill + start)"
+	@echo "  clean-ports  - Kill all AIR processes"
 	@echo "  db          - Start analytics databases with Docker"
 	@echo "  down        - Stop analytics databases"
 	@echo "  openapi-gen - Generate OpenAPI client/server code"

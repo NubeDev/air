@@ -51,6 +51,8 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 		SetupAnalysisRoutes(v1, aiService, authMiddleware)
 		SetupAIToolsRoutes(v1, aiService, authMiddleware)
 		SetupChatRoutes(v1, aiService, authMiddleware)
+		SetupSessionRoutes(v1, db, authMiddleware)
+		SetupGeneratedReportRoutes(v1, db, authMiddleware)
 
 		// FastAPI integration routes
 		fastapiGroup := v1.Group("/fastapi")

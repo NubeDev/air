@@ -1,9 +1,10 @@
 package reports
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 
+	"github.com/NubeDev/air/internal/logger"
 	"github.com/NubeDev/air/internal/services"
 	"github.com/NubeDev/air/internal/store"
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,7 @@ func CreateScope(service *services.ReportsService) gin.HandlerFunc {
 
 		scope, err := service.CreateScope(req)
 		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to create scope", err)
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to create scope",
 				Details: err.Error(),
@@ -38,19 +40,19 @@ func CreateScope(service *services.ReportsService) gin.HandlerFunc {
 func GetScope(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
-		var id uint
-		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
 			c.JSON(http.StatusBadRequest, store.ErrorResponse{
-				Error: "Invalid scope ID",
+				Error:   "Invalid scope ID",
+				Details: err.Error(),
 			})
 			return
 		}
 
-		scope, err := service.GetScope(id)
+		scope, err := service.GetScope(uint(id))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
-				Error:   "Failed to get scope",
-				Details: err.Error(),
+			c.JSON(http.StatusNotFound, store.ErrorResponse{
+				Error: "Scope not found",
 			})
 			return
 		}
@@ -59,14 +61,15 @@ func GetScope(service *services.ReportsService) gin.HandlerFunc {
 	}
 }
 
-// CreateScopeVersion creates a new version of a scope
+// CreateScopeVersion creates a new scope version
 func CreateScopeVersion(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
-		var id uint
-		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
 			c.JSON(http.StatusBadRequest, store.ErrorResponse{
-				Error: "Invalid scope ID",
+				Error:   "Invalid scope ID",
+				Details: err.Error(),
 			})
 			return
 		}
@@ -80,8 +83,9 @@ func CreateScopeVersion(service *services.ReportsService) gin.HandlerFunc {
 			return
 		}
 
-		version, err := service.CreateScopeVersion(id, req)
+		version, err := service.CreateScopeVersion(uint(id), req)
 		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to create scope version", err)
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to create scope version",
 				Details: err.Error(),
@@ -107,6 +111,7 @@ func CreateReport(service *services.ReportsService) gin.HandlerFunc {
 
 		report, err := service.CreateReport(req)
 		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to create report", err)
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to create report",
 				Details: err.Error(),
@@ -122,12 +127,10 @@ func CreateReport(service *services.ReportsService) gin.HandlerFunc {
 func GetReport(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.Param("key")
-
 		report, err := service.GetReport(key)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
-				Error:   "Failed to get report",
-				Details: err.Error(),
+			c.JSON(http.StatusNotFound, store.ErrorResponse{
+				Error: "Report not found",
 			})
 			return
 		}
@@ -136,7 +139,7 @@ func GetReport(service *services.ReportsService) gin.HandlerFunc {
 	}
 }
 
-// CreateReportVersion creates a new version of a report
+// CreateReportVersion creates a new report version
 func CreateReportVersion(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.Param("key")
@@ -151,6 +154,7 @@ func CreateReportVersion(service *services.ReportsService) gin.HandlerFunc {
 
 		version, err := service.CreateReportVersion(key, req)
 		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to create report version", err)
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to create report version",
 				Details: err.Error(),
@@ -162,10 +166,12 @@ func CreateReportVersion(service *services.ReportsService) gin.HandlerFunc {
 	}
 }
 
-// RunReport executes a report with parameters
+// RunReport executes a report
 func RunReport(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.Param("key")
+		datasourceID := c.Query("datasource_id")
+
 		var req store.RunReportRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, store.ErrorResponse{
@@ -175,8 +181,13 @@ func RunReport(service *services.ReportsService) gin.HandlerFunc {
 			return
 		}
 
+		if datasourceID != "" {
+			req.DatasourceID = &datasourceID
+		}
+
 		run, err := service.RunReport(key, req)
 		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to run report", err)
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to run report",
 				Details: err.Error(),
@@ -188,14 +199,15 @@ func RunReport(service *services.ReportsService) gin.HandlerFunc {
 	}
 }
 
-// ExportReport exports a report in various formats
+// ExportReport exports a report
 func ExportReport(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.Param("key")
 		format := c.DefaultQuery("format", "json")
 
-		data, err := service.ExportReport(key, format)
+		export, err := service.ExportReport(key, format)
 		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to export report", err)
 			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
 				Error:   "Failed to export report",
 				Details: err.Error(),
@@ -203,6 +215,6 @@ func ExportReport(service *services.ReportsService) gin.HandlerFunc {
 			return
 		}
 
-		c.Data(http.StatusOK, "application/json", data)
+		c.JSON(http.StatusOK, export)
 	}
 }
