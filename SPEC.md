@@ -14,6 +14,7 @@ AIR supports multiple analytics database sources and file datasets from day one:
 - **SQLite Control-Plane**: Stores all AIR metadata (scopes, reports, runs, analyses)
 - **Multiple Analytics Sources**: Register and connect to many external databases
 - **File Datasets**: Process CSV/Parquet/JSONL files via FastAPI microservice
+- **Redis Integration**: WebSocket management, live chat, and real-time features
 - **Read-Only Operations**: All analytics databases are accessed read-only
 - **Engine-Agnostic IR**: Intermediate Representation works across all database types
 - **Dialect-Aware SQL**: Generate engine-specific SQL for each database type
@@ -39,9 +40,11 @@ air/
 │  ├─ qa/                        # deterministic checks + LLM analysis
 │  ├─ llm/                       # adapters (OpenAI, Ollama), router (auto/manual)
 │  ├─ python/                    # FastAPI client for file processing
+│  ├─ redis/                     # Redis client and WebSocket management
+│  ├─ websocket/                 # WebSocket hub with Redis backend
 │  ├─ transport/
 │  │  ├─ rest/                   # Gin handlers (generated stubs + thin glue)
-│  │  └─ ws/                     # WebSocket hub (chat/progress/token streaming)
+│  │  └─ ws/                     # WebSocket handlers (chat/progress/token streaming)
 │  └─ telemetry/                 # logging/metrics
 ├─ clients/
 │  └─ go/                        # OpenAPI-generated Go client (used by CLI)
@@ -110,6 +113,38 @@ python:                   # FastAPI microservice configuration
     memory_mb: 2048
     workers: 2
 
+redis:                    # Redis configuration for WebSocket and caching
+  enabled: true
+  url: "redis://localhost:6379/0"
+  password: ""            # optional
+  db: 0
+  max_retries: 3
+  dial_timeout: "5s"
+  read_timeout: "3s"
+  write_timeout: "3s"
+  pool_size: 10
+  min_idle_conns: 5
+
+websocket:                # WebSocket configuration
+  enabled: true
+  buffer_size: 1024
+  read_buffer_size: 4096
+  write_buffer_size: 4096
+  handshake_timeout: "10s"
+  ping_period: "54s"
+  pong_wait: "60s"
+  max_message_size: 512
+  enable_compression: true
+
+chat:                     # Live chat configuration
+  enabled: true
+  message_retention: "24h"
+  typing_timeout: "5s"
+  presence_timeout: "5m"
+  max_room_size: 100
+  ai_streaming: true
+  ai_response_timeout: "30s"
+
 files:                    # file processing configuration
   allowed_ext: [".csv", ".parquet", ".jsonl"]
   max_rows_return_json: 50000
@@ -174,6 +209,143 @@ AIR includes a **private FastAPI microservice** for file dataset processing:
 - **Path Validation**: Restricted file access within configured base paths
 
 See [SPEC-PY.md](./SPEC-PY.md) for detailed FastAPI microservice specification.
+
+## Redis Integration & Live Chat
+
+AIR includes **Redis integration** for WebSocket management and live chat functionality:
+
+### Purpose
+- **WebSocket Management**: Handle real-time connections with persistence and scalability
+- **Live Chat**: Enable real-time AI conversations with streaming responses
+- **Session Management**: Track user sessions, presence, and typing indicators
+- **Message Queuing**: Queue AI requests and stream responses back to users
+- **Multi-Instance Support**: Scale horizontally with shared state
+
+### Key Features
+- **Real-time Messaging**: Instant message delivery and AI responses
+- **AI Streaming**: Stream AI responses as they're generated (token by token)
+- **Presence Management**: Track who's online/offline in real-time
+- **Typing Indicators**: Show when users are typing
+- **Message Persistence**: Store chat history for reconnection
+- **Room Management**: Support for group chats and channels
+- **Rate Limiting**: Prevent AI API abuse per user
+- **Session Recovery**: Reconnect users to their chat sessions
+
+### Redis Data Structures
+
+```redis
+# Chat messages (sorted set by timestamp)
+ZADD chat:user:123 1640995200 "msg_id_1"
+HSET chat:msg:msg_id_1 content "Hello AI!" user_id "123" type "user" timestamp "2025-01-01T00:00:00Z"
+
+# Active WebSocket sessions
+HSET sessions:user:123 ws_id "ws_456" last_seen 1640995200 room "general"
+
+# User presence (who's online)
+SADD online_users "user_123"
+EXPIRE online_users 300  # 5 minute timeout
+
+# Typing indicators
+SET typing:user:123 "general" EX 5  # 5 second timeout
+
+# AI response queue
+LPUSH ai_queue:user:123 "ai_request_id_789"
+HSET ai_request:ai_request_id_789 prompt "What is energy consumption?" user_id "123" status "processing"
+
+# Chat rooms
+SADD room:general:members "user_123" "user_456"
+HSET room:general:info name "General Chat" created_at "2025-01-01T00:00:00Z"
+```
+
+### WebSocket Channels
+
+```go
+// Real-time channels for different purposes
+channels := map[string]chan []byte{
+    "chat:user:123",           // Personal chat messages
+    "chat:room:general",       // Group chat messages
+    "ai:stream:user:123",      // AI streaming responses
+    "typing:user:123",         // Typing indicators
+    "presence:online",         // Online users list
+    "system:notifications",    // System notifications
+}
+```
+
+### Live Chat Integration
+
+**1. Real-time AI Conversations**
+```javascript
+// Frontend WebSocket connection
+const ws = new WebSocket('ws://localhost:9000/v1/ws');
+
+// Send user message
+ws.send(JSON.stringify({
+    type: "chat_message",
+    content: "What's our energy consumption trend?",
+    user_id: "user_123",
+    room: "general"
+}));
+
+// Receive AI responses as they stream
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === "ai_stream") {
+        appendToChat(data.content); // Partial AI response
+    } else if (data.type === "ai_complete") {
+        showCompleteResponse(data.response);
+    }
+};
+```
+
+**2. AI Streaming Backend**
+```go
+// Stream AI responses to WebSocket
+func (h *WebSocketHub) StreamAIResponse(userID string, prompt string) {
+    // Send to AI service for processing
+    response := h.aiService.StreamChat(prompt)
+    
+    for chunk := range response.Stream {
+        h.SendToUser(userID, WebSocketMessage{
+            Type: "ai_stream",
+            Content: chunk,
+            Timestamp: time.Now(),
+        })
+    }
+    
+    // Mark as complete
+    h.SendToUser(userID, WebSocketMessage{
+        Type: "ai_complete",
+        Response: response.FullResponse,
+        Timestamp: time.Now(),
+    })
+}
+```
+
+**3. Presence & Typing Indicators**
+```go
+// User typing indicator
+func (h *WebSocketHub) SetUserTyping(userID string, room string, isTyping bool) {
+    if isTyping {
+        h.redis.Set(fmt.Sprintf("typing:%s", userID), room, 5*time.Second)
+    } else {
+        h.redis.Del(fmt.Sprintf("typing:%s", userID))
+    }
+    
+    h.BroadcastToRoom(room, WebSocketMessage{
+        Type: "typing",
+        UserID: userID,
+        Room: room,
+        IsTyping: isTyping,
+    })
+}
+```
+
+### Security & Performance
+- **Authentication**: JWT tokens for WebSocket connections
+- **Rate Limiting**: Per-user limits on AI requests and messages
+- **Message Validation**: Sanitize and validate all incoming messages
+- **Connection Limits**: Maximum connections per user and room
+- **Memory Management**: Automatic cleanup of old messages and sessions
 
 ## Data Model (SQLite with GORM)
 
@@ -362,9 +534,17 @@ For operations that may take longer than 30 seconds (large datasets, complex ana
 
 ### WebSocket Streaming
 
-- `GET /v1/ws` → multiplexed channels
-- Channels: `learn/<job>`, `run/<run_id>`, `chat/<session>`, `process/<job_id>`
-- Message format: `{ channel, type: status|token|result|error, payload, ts }`
+- `GET /v1/ws` → multiplexed channels with Redis backend
+- **Channels**: 
+  - `learn/<job>` - Database learning progress
+  - `run/<run_id>` - Report execution progress  
+  - `chat/<session>` - Live chat messages
+  - `process/<job_id>` - Heavy processing jobs
+  - `ai:stream:<user_id>` - AI response streaming
+  - `typing:<user_id>` - Typing indicators
+  - `presence:online` - User presence updates
+- **Message format**: `{ channel, type: status|token|result|error|ai_stream|typing|presence, payload, ts, user_id? }`
+- **Redis Integration**: All WebSocket state persisted in Redis for scalability
 
 ## CLI (Cobra)
 
@@ -415,7 +595,7 @@ aircli ws --channel run/<run_id>
 
 ## Development Setup
 
-### Docker Compose (Analytics DB)
+### Docker Compose (Analytics DB + Redis)
 
 ```yaml
 services:
@@ -427,15 +607,28 @@ services:
       POSTGRES_DB: energy
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: air-redis
+    ports: ["6379:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata: {}
+  redis_data: {}
 ```
 
 ### Makefile Targets
 
 ```make
 check:
-	bash scripts/check.sh   # docker, analytics DB reachable, ollama up, fastapi up
+	bash scripts/check.sh   # docker, analytics DB reachable, redis up, ollama up, fastapi up
 
 dev-backend:
 	go run ./cmd/api --data data --config config-dev.yaml --auth
@@ -486,7 +679,8 @@ build-all: cli python-deps
 - **Enhanced QA** with FastAPI-powered EDA and validation
 - **Bound and portable report definitions** with parameter schema validation
 - Parameterized report execution across multiple datasources and file datasets
-- WebSocket streaming for real-time updates
+- **Redis-powered WebSocket streaming** for real-time updates and live chat
+- **Live AI chat** with streaming responses and presence management
 - OpenAPI specification with generated server stubs and Go client
 - CLI that uses REST/WS exclusively with multi-datasource support
 - JWT authentication with optional disable flag
@@ -510,3 +704,5 @@ build-all: cli python-deps
 14. **Internal Services**: FastAPI microservice only accessible by Go backend
 15. **Portable Deployment**: SQLite enables simple, portable deployments
 16. **Dual API Design**: Standard APIs for quick operations (<30s), Heavy Processing APIs for long-running tasks with WebSocket progress updates
+17. **Redis Integration**: WebSocket state, live chat, and real-time features powered by Redis
+18. **Live Chat**: Real-time AI conversations with streaming responses and presence management

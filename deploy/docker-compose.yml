@@ -53,7 +53,37 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: air-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  air-py:
+    build: ../dataserver
+    container_name: air-py
+    ports:
+      - "9001:9001"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../dataserver:/app
+      - /tmp/air-py:/tmp/air-py
+
 volumes:
   timescale_data:
   postgres_data:
   mysql_data:
+  redis_data:

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/NubeDev/air/cmd/api/handlers/fastapi"
 	"github.com/NubeDev/air/cmd/api/handlers/health"
 	"github.com/NubeDev/air/internal/auth"
 	"github.com/NubeDev/air/internal/config"
@@ -17,6 +18,7 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 	aiService := services.NewAIService(registry, db)
 	reportsService := services.NewReportsService(registry, db)
 	healthService := services.NewHealthService(cfg, registry)
+	fastapiHandler := fastapi.NewFastAPIHandler("http://localhost:9001")
 
 	// Health check endpoint
 	router.GET("/health", health.HealthHandler(healthService))
@@ -42,6 +44,14 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 		SetupReportRoutes(v1, reportsService, authMiddleware)
 		SetupAnalysisRoutes(v1, aiService, authMiddleware)
 		SetupAIToolsRoutes(v1, aiService, authMiddleware)
+
+		// FastAPI integration routes
+		fastapiGroup := v1.Group("/fastapi")
+		{
+			fastapiGroup.GET("/health", fastapiHandler.Health)
+			fastapiGroup.POST("/test/energy", fastapiHandler.TestEnergyData)
+			fastapiGroup.POST("/test/discover", fastapiHandler.TestDiscoverFiles)
+		}
 	}
 
 	// WebSocket endpoint
