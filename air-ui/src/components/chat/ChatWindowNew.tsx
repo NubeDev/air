@@ -130,6 +130,12 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
     setMessages(prev => [...prev, userMessage]);
 
     try {
+      // Handle @ commands first
+      if (content.startsWith('@')) {
+        await handleAtCommand(content);
+        return; // Don't send to AI, handle locally
+      }
+      
       // Handle slash commands locally first
       if (content.startsWith('/')) {
         await handleSlashCommand(content);
@@ -184,6 +190,109 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleAtCommand = async (command: string) => {
+    const [cmd] = command.split(' ');
+    
+    // Handle empty @ command
+    if (cmd === '@' || cmd === '') {
+      const helpMessage: ChatMessage = {
+        id: `at_help_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        role: 'assistant',
+        content: `**Available @ Commands:**
+
+**@files** - List available files
+- Example: \`@files\`
+
+**@db** - List available databases
+- Example: \`@db\`
+
+**@load-file/<filename>** - Load a specific file
+- Example: \`@load-file/abc.csv\`
+
+**Current Status:**
+- Loaded dataset: ${selectedFile ? uploadedFiles.find(f => f.file_id === selectedFile)?.filename || 'None' : 'None'}
+- Available files: ${uploadedFiles.length}`,
+        timestamp: new Date().toISOString(),
+        report_id: reportId,
+      };
+      setMessages(prev => [...prev, helpMessage]);
+      return;
+    }
+    
+    switch (cmd) {
+      case '@files':
+        // This is handled by the UI autocomplete, no need to send a message
+        break;
+        
+      case '@db':
+        // This is handled by the UI autocomplete, no need to send a message
+        break;
+        
+      default:
+        if (cmd.startsWith('@load-file/')) {
+          const filename = cmd.replace('@load-file/', '');
+          
+          // Try to find the file in the current uploaded files
+          let file = uploadedFiles.find(f => f.filename === filename);
+          
+          // If not found, try to load files from backend
+          if (!file) {
+            try {
+              const response = await chatApi.getUploadedFiles();
+              const files = response.data.files || [];
+              file = files.find((f: any) => f.filename === filename);
+            } catch (error) {
+              console.error('Failed to load files from backend:', error);
+            }
+          }
+          
+          if (file) {
+            // Stage the file and ask for scope/questions
+            setSelectedFile(file.file_id);
+            
+            const stageMessage: ChatMessage = {
+              id: `at_load_stage_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              role: 'assistant',
+              content: `📁 **File staged for loading: ${filename}**
+
+**What would you like to do with this file?**
+- Ask a question about the data
+- Request an analysis
+- Generate a report
+- Or just say "analyze" to get started
+
+Type your question or press Enter to proceed with basic analysis.`,
+              timestamp: new Date().toISOString(),
+              report_id: reportId,
+            };
+            setMessages(prev => [...prev, stageMessage]);
+          } else {
+            const errorMessage: ChatMessage = {
+              id: `at_load_error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              role: 'assistant',
+              content: `❌ **File not found: ${filename}**
+
+Use \`@files\` to see available files.`,
+              timestamp: new Date().toISOString(),
+              report_id: reportId,
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          }
+        } else {
+          const unknownMessage: ChatMessage = {
+            id: `at_unknown_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            role: 'assistant',
+            content: `❌ **Unknown @ command: ${cmd}**
+
+Use \`@files\`, \`@db\`, or \`@load-file/<filename>\``,
+            timestamp: new Date().toISOString(),
+            report_id: reportId,
+          };
+          setMessages(prev => [...prev, unknownMessage]);
+        }
     }
   };
 
@@ -764,6 +873,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
               onSend={handleSendMessage}
               onFileAttach={handleFileAttach}
               onRemoveFile={handleRemoveFile}
+              onAtCommand={handleAtCommand}
               attachedFiles={attachedFiles}
               disabled={isLoading || !modelStatus[selectedModel].connected || !wsConnected}
               placeholder={
@@ -773,7 +883,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
                     ? `Cannot send message - ${modelStatus[selectedModel].error || 'No connection'}`
                     : selectedFile 
                       ? `Ask me about ${uploadedFiles.find(f => f.file_id === selectedFile)?.filename || 'your dataset'}...`
-                      : 'Message AIR Assistant...'
+                      : 'Type @files to see available files, @db for databases, or @load-file/filename to load a file...'
               }
             />
             

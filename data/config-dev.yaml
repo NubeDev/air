@@ -36,7 +36,7 @@ models:
   sql_primary:  "sqlcoder"
   openai:
     model: "gpt-4o-mini"
-    api_key: ""                 # optional if not using OpenAI
+    api_key: ""  # Set OPENAI_API_KEY environment variable instead
   ollama:
     host: "http://localhost:11434"
     llama3_model: "llama3:latest"
