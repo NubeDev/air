@@ -1,0 +1,50 @@
+#!/bin/bash
+
+echo "🎨 Testing New ChatGPT-like UX"
+echo "==============================="
+
+# Start frontend if not running
+if ! curl -s http://localhost:3000 > /dev/null; then
+    echo "Starting frontend..."
+    cd /home/user/code/go/nube/air/air-ui && npm run dev &
+    sleep 5
+fi
+
+echo "✅ Frontend should be running at http://localhost:3000"
+echo ""
+echo "🎯 **NEW UX IMPROVEMENTS:**"
+echo ""
+echo "1. **Clean Header Design:**"
+echo "   - Minimalist header with just logo and essential controls"
+echo "   - Model selector and debug button in top-right"
+echo "   - No clutter or unnecessary elements"
+echo ""
+echo "2. **ChatGPT-style Welcome Screen:**"
+echo "   - Clean, centered layout with proper spacing"
+echo "   - Two clear action cards: 'Upload New File' and 'Load Existing Dataset'"
+echo "   - Visual hierarchy with icons and descriptions"
+echo "   - No overwhelming tabs or complex navigation"
+echo ""
+echo "3. **Better File Management:**"
+echo "   - Clean file upload area with drag-and-drop styling"
+echo "   - File list with proper metadata (size, type)"
+echo "   - Clear visual feedback for selected files"
+echo ""
+echo "4. **Improved Chat Interface:**"
+echo "   - Messages in a centered, readable container"
+echo "   - Better spacing and typography"
+echo "   - Smooth scrolling with scroll-to-bottom button"
+echo ""
+echo "5. **Enhanced Visual Design:**"
+echo "   - Gray background for better contrast"
+echo "   - White content areas for readability"
+echo "   - Proper use of shadows and borders"
+echo "   - Consistent color scheme"
+echo ""
+echo "Please test the following in the browser:"
+echo "1. Go to http://localhost:3000"
+echo "2. Notice the clean, ChatGPT-like interface"
+echo "3. Try uploading a file or loading existing data"
+echo "4. Start a conversation and see the improved chat experience"
+echo ""
+echo "The UI should now feel much more professional and user-friendly! 🚀"

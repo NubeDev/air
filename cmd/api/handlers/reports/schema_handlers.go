@@ -52,19 +52,16 @@ func generateDefaultSchema() map[string]interface{} {
 				"type":        "string",
 				"title":       "Customer Name",
 				"description": "Filter results by specific customer name",
-				"enum":        []string{"Alice Johnson", "Bob Wilson", "Carol Brown", "David Lee", "Eva Martinez"},
 			},
 			"sales_rep_name": map[string]interface{}{
 				"type":        "string",
 				"title":       "Sales Representative",
 				"description": "Filter results by sales representative",
-				"enum":        []string{"John Smith", "Sarah Davis", "Mike Johnson"},
 			},
 			"region": map[string]interface{}{
 				"type":        "string",
 				"title":       "Region",
 				"description": "Filter results by geographic region",
-				"enum":        []string{"North America", "Europe", "Asia", "South America", "Africa", "Oceania"},
 			},
 			"start_date": map[string]interface{}{
 				"type":        "string",

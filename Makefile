@@ -1,4 +1,4 @@
-.PHONY: check dev-backend logs-backend dev-ui dev-data logs-data dev-all logs-all db down openapi-gen cli build clean clean-ports test
+.PHONY: check dev-backend logs-backend dev-ui logs-ui dev-data logs-data dev-all dev-backend-ui logs-all logs-backend-ui db down openapi-gen cli build clean clean-ports test help
 
 # Default target
 all: check build
@@ -27,7 +27,14 @@ logs-backend:
 	@ps aux | grep "go run ./cmd/api" | grep -v grep | head -1 | awk '{print $$2}' | xargs -I {} tail -f /proc/{}/fd/1 2>/dev/null || echo "Go backend server not running. Start with 'make dev-backend'"
 
 dev-ui:
-	@echo "UI not implemented yet"
+	@echo "Killing existing processes on port 3000..."
+	@-pkill -f "vite" 2>/dev/null || true
+	@-fuser -k 3000/tcp 2>/dev/null || true
+	@-fuser -k 3001/tcp 2>/dev/null || true
+	@sleep 1
+	@echo "Starting AIR UI..."
+	cd air-ui && npm run dev &
+	@echo "UI server started in background. Use 'make logs-ui' to view logs."
 
 dev-data:
 	@echo "Killing existing processes on port 9001..."
@@ -42,13 +49,25 @@ logs-data:
 	@echo "Tailing FastAPI server logs..."
 	@ps aux | grep "python -m app.main" | grep -v grep | head -1 | awk '{print $$2}' | xargs -I {} tail -f /proc/{}/fd/1 2>/dev/null || echo "FastAPI server not running. Start with 'make dev-data'"
 
+logs-ui:
+	@echo "Tailing UI server logs..."
+	@ps aux | grep "vite" | grep -v grep | head -1 | awk '{print $$2}' | xargs -I {} tail -f /proc/{}/fd/1 2>/dev/null || echo "UI server not running. Start with 'make dev-ui'"
+
 # Combined development targets
 dev-all:
-	@echo "Starting both Go backend and FastAPI servers..."
+	@echo "Starting Go backend, FastAPI, and UI servers..."
 	@make clean-ports
 	@make dev-backend
 	@make dev-data
-	@echo "Both servers started. Use 'make logs-all' to view combined logs."
+	@make dev-ui
+	@echo "All servers started. Use 'make logs-all' to view combined logs."
+
+dev-backend-ui:
+	@echo "Starting Go backend and UI servers..."
+	@make clean-ports
+	@make dev-backend
+	@make dev-ui
+	@echo "Backend and UI started. Use 'make logs-backend-ui' to view logs."
 
 # Force restart everything
 restart:
@@ -58,11 +77,20 @@ restart:
 	@make dev-all
 
 logs-all:
-	@echo "Tailing both server logs..."
+	@echo "Tailing all server logs..."
 	@echo "=== Go Backend Logs ==="
 	@make logs-backend &
 	@echo "=== FastAPI Logs ==="
-	@make logs-data
+	@make logs-data &
+	@echo "=== UI Logs ==="
+	@make logs-ui
+
+logs-backend-ui:
+	@echo "Tailing backend and UI logs..."
+	@echo "=== Go Backend Logs ==="
+	@make logs-backend &
+	@echo "=== UI Logs ==="
+	@make logs-ui
 
 # Database targets
 db:
@@ -100,8 +128,11 @@ clean-ports:
 	@-pkill -f "go run ./cmd/api" 2>/dev/null || true
 	@-pkill -f "bin/air" 2>/dev/null || true
 	@-pkill -f "python -m app.main" 2>/dev/null || true
+	@-pkill -f "vite" 2>/dev/null || true
 	@-fuser -k 9000/tcp 2>/dev/null || true
 	@-fuser -k 9001/tcp 2>/dev/null || true
+	@-fuser -k 3000/tcp 2>/dev/null || true
+	@-fuser -k 3001/tcp 2>/dev/null || true
 	@echo "All AIR processes stopped"
 
 # Test targets
@@ -128,29 +159,34 @@ run: build
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  check       - Check environment and dependencies"
-	@echo "  dev-backend  - Start backend server in development mode"
-	@echo "  logs-backend - Tail Go backend server logs"
-	@echo "  dev-ui       - Start UI (not implemented)"
-	@echo "  dev-data     - Start FastAPI data processing server"
-	@echo "  logs-data    - Tail FastAPI server logs"
-	@echo "  dev-all      - Start both Go backend and FastAPI servers"
-	@echo "  logs-all     - Tail both server logs"
-	@echo "  restart      - Force restart all services (kill + start)"
-	@echo "  clean-ports  - Kill all AIR processes"
-	@echo "  db          - Start analytics databases with Docker"
-	@echo "  down        - Stop analytics databases"
-	@echo "  openapi-gen - Generate OpenAPI client/server code"
-	@echo "  cli         - Build CLI tool"
-	@echo "  build       - Build all binaries"
+	@echo "  check          - Check environment and dependencies"
+	@echo "  dev-backend    - Start Go backend server in development mode"
+	@echo "  logs-backend   - Tail Go backend server logs"
+	@echo "  dev-ui         - Start React UI development server"
+	@echo "  logs-ui        - Tail UI server logs"
+	@echo "  dev-data       - Start FastAPI data processing server"
+	@echo "  logs-data      - Tail FastAPI server logs"
+	@echo "  dev-all        - Start all servers (backend, data, UI)"
+	@echo "  logs-all       - Tail all server logs"
+	@echo "  dev-backend-ui - Start backend and UI only"
+	@echo "  logs-backend-ui- Tail backend and UI logs"
+	@echo "  restart        - Force restart all services"
+	@echo "  clean-ports    - Kill all AIR processes"
+	@echo "  build          - Build CLI and API server"
+	@echo "  run-dev        - Run with auth disabled"
+	@echo "  db             - Start analytics databases"
+	@echo "  down           - Stop analytics databases"
+	@echo "  openapi-gen    - Generate OpenAPI client/server code"
 	@echo ""
 	@echo "Quick Start:"
-	@echo "  make dev-all     # Start both servers"
-	@echo "  make logs-all    # View logs"
-	@echo "  make clean-ports # Stop everything"
+	@echo "  make dev-all        # Start all servers (backend, data, UI)"
+	@echo "  make dev-backend-ui # Start backend and UI only"
+	@echo "  make logs-all       # View all logs"
+	@echo "  make clean-ports    # Stop everything"
 	@echo ""
 	@echo "Health Checks:"
-	@echo "  curl http://localhost:9000/health      # Go backend"
+	@echo "  curl http://localhost:9000/v1/reports  # Go backend"
+	@echo "  curl http://localhost:3000             # UI"
 	@echo "  curl http://localhost:9001/v1/py/health # FastAPI"
 	@echo ""
 	@echo "For detailed guide, see SPEC-RUNNING.md"

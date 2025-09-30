@@ -167,11 +167,26 @@ func (s *AIService) GenerateSQLFromIR(req store.GenerateSQLRequest) (string, map
 		return "", nil, fmt.Errorf("datasource not found: %w", err)
 	}
 
-	// Generate SQL directly from IR (bypassing SQLCoder for now)
-	sql := buildSQLCoderPromptFromIR(req.IR, connector.Kind)
+	// Convert IR to natural language prompt for SQLCoder
+	prompt, err := s.buildSQLCoderPromptFromIR(req.IR, connector.Kind)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to build SQLCoder prompt: %w", err)
+	}
+
+	// Get schema information for the datasource
+	schema, err := s.getDatasourceSchema(req.DatasourceID)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get datasource schema: %w", err)
+	}
+
+	// Use SQLCoder to generate SQL
+	sql, err := s.GenerateSQL(prompt, schema)
+	if err != nil {
+		return "", nil, fmt.Errorf("SQLCoder generation failed: %w", err)
+	}
 
 	if sql == "" {
-		return "", nil, fmt.Errorf("SQL generation returned empty result")
+		return "", nil, fmt.Errorf("SQLCoder returned empty result")
 	}
 
 	// Use the SQLCoder-generated SQL directly
@@ -852,49 +867,140 @@ SELECT`, schema, prompt)
 	return resp.Response, nil
 }
 
-// buildSQLCoderPromptFromIR converts IR into a SQLCoder-friendly prompt
-func buildSQLCoderPromptFromIR(ir map[string]interface{}, datasourceKind string) string {
-
-	// For now, let's just generate a simple SQL query based on the IR
-	// This is a temporary solution to get the system working
-
+// buildSQLCoderPromptFromIR converts IR into a natural language prompt for SQLCoder
+func (s *AIService) buildSQLCoderPromptFromIR(ir map[string]interface{}, datasourceKind string) (string, error) {
 	// Extract basic info from IR
 	dataset, _ := ir["dataset"].(string)
 	if dataset == "" {
-		dataset = "complex_sales_data" // fallback
+		return "", fmt.Errorf("no dataset specified in IR")
 	}
 
-	// Check if this is a sales aggregation query
-	selectFields, _ := ir["select"].([]interface{})
-	groupBy, _ := ir["group_by"].([]interface{})
+	var promptParts []string
 
-	// Simple logic: if we have SUM and GROUP BY, it's an aggregation query
-	hasSum := false
-	hasGroupBy := len(groupBy) > 0
+	// Start with the main table
+	promptParts = append(promptParts, fmt.Sprintf("Query the %s table", dataset))
 
-	for _, field := range selectFields {
-		if fieldMap, ok := field.(map[string]interface{}); ok {
-			for expr := range fieldMap {
-				if strings.Contains(strings.ToUpper(expr), "SUM(") {
-					hasSum = true
-					break
+	// Add SELECT fields description
+	if selectFields, ok := ir["select"].([]interface{}); ok && len(selectFields) > 0 {
+		var fieldDescriptions []string
+		for _, field := range selectFields {
+			if fieldMap, ok := field.(map[string]interface{}); ok {
+				for alias, expr := range fieldMap {
+					if exprStr, ok := expr.(string); ok {
+						if alias != exprStr {
+							fieldDescriptions = append(fieldDescriptions, fmt.Sprintf("%s (as %s)", exprStr, alias))
+						} else {
+							fieldDescriptions = append(fieldDescriptions, exprStr)
+						}
+					}
 				}
+			} else if fieldStr, ok := field.(string); ok {
+				fieldDescriptions = append(fieldDescriptions, fieldStr)
 			}
+		}
+		if len(fieldDescriptions) > 0 {
+			promptParts = append(promptParts, fmt.Sprintf("selecting %s", strings.Join(fieldDescriptions, ", ")))
 		}
 	}
 
-	if hasSum && hasGroupBy {
-		// This is a sales aggregation query
-		return fmt.Sprintf("SELECT customer_name, SUM(total_amount) AS total_sales FROM %s WHERE customer_name = '{{customer_name}}' GROUP BY customer_name ORDER BY customer_name ASC LIMIT 1000;", dataset)
+	// Add WHERE conditions description
+	if whereConditions, ok := ir["where"].([]interface{}); ok && len(whereConditions) > 0 {
+		var conditionDescriptions []string
+		for _, condition := range whereConditions {
+			if condMap, ok := condition.(map[string]interface{}); ok {
+				field, _ := condMap["field"].(string)
+				operator, _ := condMap["operator"].(string)
+				value, _ := condMap["value"].(string)
+
+				if field != "" && operator != "" && value != "" {
+					// Handle placeholder values
+					if strings.HasPrefix(value, "{{") && strings.HasSuffix(value, "}}") {
+						paramName := strings.Trim(value, "{{}}")
+						conditionDescriptions = append(conditionDescriptions, fmt.Sprintf("%s %s %s", field, operator, paramName))
+					} else {
+						conditionDescriptions = append(conditionDescriptions, fmt.Sprintf("%s %s '%s'", field, operator, value))
+					}
+				}
+			}
+		}
+		if len(conditionDescriptions) > 0 {
+			promptParts = append(promptParts, fmt.Sprintf("where %s", strings.Join(conditionDescriptions, " AND ")))
+		}
 	}
 
-	// If we have GROUP BY but no SUM, it's still a grouping query
-	if hasGroupBy {
-		return fmt.Sprintf("SELECT customer_name, total_amount FROM %s WHERE customer_name = '{{customer_name}}' GROUP BY customer_name ORDER BY customer_name ASC LIMIT 1000;", dataset)
+	// Add GROUP BY description
+	if groupByFields, ok := ir["group_by"].([]interface{}); ok && len(groupByFields) > 0 {
+		var fields []string
+		for _, field := range groupByFields {
+			if fieldStr, ok := field.(string); ok {
+				fields = append(fields, fieldStr)
+			}
+		}
+		if len(fields) > 0 {
+			promptParts = append(promptParts, fmt.Sprintf("grouped by %s", strings.Join(fields, ", ")))
+		}
 	}
 
-	// Default simple query
-	return fmt.Sprintf("SELECT customer_name, total_amount FROM %s LIMIT 10;", dataset)
+	// Add ORDER BY description
+	if orderByFields, ok := ir["order_by"].([]interface{}); ok && len(orderByFields) > 0 {
+		var orderDescriptions []string
+		for _, field := range orderByFields {
+			if fieldMap, ok := field.(map[string]interface{}); ok {
+				fieldName, _ := fieldMap["field"].(string)
+				direction, _ := fieldMap["direction"].(string)
+
+				if fieldName != "" {
+					if direction != "" {
+						orderDescriptions = append(orderDescriptions, fmt.Sprintf("%s %s", fieldName, strings.ToUpper(direction)))
+					} else {
+						orderDescriptions = append(orderDescriptions, fieldName)
+					}
+				}
+			} else if fieldStr, ok := field.(string); ok {
+				orderDescriptions = append(orderDescriptions, fieldStr)
+			}
+		}
+		if len(orderDescriptions) > 0 {
+			promptParts = append(promptParts, fmt.Sprintf("ordered by %s", strings.Join(orderDescriptions, ", ")))
+		}
+	}
+
+	// Add LIMIT description
+	if limit, ok := ir["limit"].(float64); ok && limit > 0 {
+		promptParts = append(promptParts, fmt.Sprintf("limited to %d rows", int(limit)))
+	}
+
+	// Join all parts into a natural language description
+	description := strings.Join(promptParts, ", ")
+
+	// Add database-specific instructions
+	switch strings.ToLower(datasourceKind) {
+	case "sqlite", "sqlite3":
+		description += ". Use SQLite syntax."
+	case "postgres", "postgresql", "timescaledb":
+		description += ". Use PostgreSQL syntax."
+	case "mysql":
+		description += ". Use MySQL syntax."
+	}
+
+	return description, nil
+}
+
+// getDatasourceSchema retrieves schema information for a datasource
+func (s *AIService) getDatasourceSchema(datasourceID string) (string, error) {
+	// Get datasource connector
+	connector, err := s.registry.GetDatasource(datasourceID)
+	if err != nil {
+		return "", fmt.Errorf("datasource not found: %w", err)
+	}
+
+	// For now, return a basic schema description
+	// In a full implementation, this would introspect the actual database schema
+	schema := fmt.Sprintf(`-- Database: %s
+-- Table structure will be provided by datasource learning
+-- This is a placeholder schema that should be replaced with actual schema introspection`, connector.Kind)
+
+	return schema, nil
 }
 
 // sanitizeModelJSONOutput removes common code fencing and yields raw JSON bytes

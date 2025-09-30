@@ -11,14 +11,14 @@ import (
 )
 
 // SetupWebSocketRoutes sets up WebSocket routes
-func SetupWebSocketRoutes(router *gin.Engine, redisClient *redis.Client, wsConfig *config.WebSocketConfig) {
+func SetupWebSocketRoutes(router *gin.Engine, redisClient *redis.Client, wsConfig *config.WebSocketConfig, aiService interface{}) {
 	if !wsConfig.Enabled {
 		logger.LogWarn(logger.ServiceWS, "WebSocket routes disabled")
 		return
 	}
 
 	// Create WebSocket handler
-	wsHandler := websocket.NewHandler(redisClient, wsConfig)
+	wsHandler := websocket.NewHandler(redisClient, wsConfig, aiService)
 
 	// Start WebSocket hub
 	ctx := context.Background()

@@ -55,6 +55,12 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 		SetupGeneratedReportRoutes(v1, db, authMiddleware)
 		SetupCSVRoutes(v1, registry, db, authMiddleware)
 
+		// New AI model and datasource routes
+		SetupAIModelRoutes(v1, aiService)
+		SetupDatasourceAPIRoutes(v1, datasourceService)
+		SetupChatAPIRoutes(v1, aiService, reportsService, datasourceService)
+		SetupUploadRoutes(v1)
+
 		// FastAPI integration routes
 		fastapiGroup := v1.Group("/fastapi")
 		{
@@ -66,6 +72,6 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 
 	// WebSocket routes
 	if cfg.Server.WSEnabled {
-		SetupWebSocketRoutes(router, redisClient, &cfg.WebSocket)
+		SetupWebSocketRoutes(router, redisClient, &cfg.WebSocket, aiService)
 	}
 }

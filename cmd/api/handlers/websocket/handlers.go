@@ -24,7 +24,7 @@ type Handler struct {
 }
 
 // NewHandler creates a new WebSocket handler
-func NewHandler(redisClient *redis.Client, wsConfig *config.WebSocketConfig) *Handler {
+func NewHandler(redisClient *redis.Client, wsConfig *config.WebSocketConfig, aiService interface{}) *Handler {
 	// Create WebSocket hub configuration
 	hubConfig := &ws.Config{
 		ReadBufferSize:    wsConfig.ReadBufferSize,
@@ -36,7 +36,7 @@ func NewHandler(redisClient *redis.Client, wsConfig *config.WebSocketConfig) *Ha
 		EnableCompression: wsConfig.EnableCompression,
 	}
 
-	hub := ws.NewHub(redisClient, hubConfig)
+	hub := ws.NewHub(redisClient, hubConfig, aiService)
 
 	return &Handler{
 		hub:    hub,
@@ -51,13 +51,26 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
 		// Allow all origins for now - in production, implement proper CORS
+		logger.LogInfo(logger.ServiceWS, "WebSocket origin check", map[string]interface{}{
+			"origin": r.Header.Get("Origin"),
+			"host":   r.Host,
+		})
 		return true
 	},
+	EnableCompression: true,
+	HandshakeTimeout:  10 * time.Second,
 }
 
 // HandleWebSocket handles WebSocket connections
 func (h *Handler) HandleWebSocket(c *gin.Context) {
+	logger.LogInfo(logger.ServiceWS, "WebSocket connection attempt", map[string]interface{}{
+		"remote_addr": c.Request.RemoteAddr,
+		"user_agent":  c.Request.UserAgent(),
+		"origin":      c.Request.Header.Get("Origin"),
+	})
+
 	if !h.config.Enabled {
+		logger.LogWarn(logger.ServiceWS, "WebSocket service is disabled")
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "WebSocket service is disabled",
 		})
@@ -67,7 +80,10 @@ func (h *Handler) HandleWebSocket(c *gin.Context) {
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		logger.LogError(logger.ServiceWS, "Failed to upgrade connection", err)
+		logger.LogError(logger.ServiceWS, "Failed to upgrade connection", err, map[string]interface{}{
+			"remote_addr": c.Request.RemoteAddr,
+			"error":       err.Error(),
+		})
 		return
 	}
 
