@@ -1,4 +1,4 @@
-.PHONY: check dev-backend logs-backend dev-ui logs-ui dev-data logs-data dev-all dev-backend-ui logs-all logs-backend-ui db down openapi-gen cli build clean clean-ports test help
+.PHONY: check dev-backend logs-backend dev-ui logs-ui dev-data logs-data dev-all dev-backend-ui logs-all logs-backend-ui db down openapi-gen cli build clean clean-ports test deps deps-ui deps-python deps-all help
 
 # Default target
 all: check build
@@ -142,9 +142,25 @@ test:
 
 # Install dependencies
 deps:
-	@echo "Installing dependencies..."
+	@echo "Installing Go dependencies..."
 	go mod tidy
 	go mod download
+
+deps-ui:
+	@echo "Installing UI dependencies..."
+	@command -v npm >/dev/null || (echo "npm not found, please install Node.js" && exit 1)
+	cd air-ui && npm install
+	@echo "UI dependencies installed successfully"
+
+deps-python:
+	@echo "Installing Python dependencies..."
+	@command -v python3 >/dev/null || (echo "python3 not found" && exit 1)
+	cd dataserver && python3 -m venv venv
+	cd dataserver && bash -c "source venv/bin/activate && pip install -r requirements.txt"
+	@echo "Python dependencies installed successfully"
+
+deps-all: deps deps-ui deps-python
+	@echo "All dependencies installed successfully"
 
 # Run with auth disabled (development)
 run-dev: build
@@ -177,8 +193,13 @@ help:
 	@echo "  db             - Start analytics databases"
 	@echo "  down           - Stop analytics databases"
 	@echo "  openapi-gen    - Generate OpenAPI client/server code"
+	@echo "  deps           - Install Go dependencies"
+	@echo "  deps-ui        - Install UI dependencies (Node.js)"
+	@echo "  deps-python    - Install Python dependencies"
+	@echo "  deps-all       - Install all dependencies"
 	@echo ""
 	@echo "Quick Start:"
+	@echo "  make deps-all       # Install all dependencies first"
 	@echo "  make dev-all        # Start all servers (backend, data, UI)"
 	@echo "  make dev-backend-ui # Start backend and UI only"
 	@echo "  make logs-all       # View all logs"

@@ -71,6 +71,25 @@ type GenerateResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// ModelsResponse represents a list of models response
+type ModelsResponse struct {
+	Models []Model `json:"models"`
+}
+
+// Model represents a model
+type Model struct {
+	Name       string `json:"name"`
+	Size       int64  `json:"size"`
+	ModifiedAt string `json:"modified_at"`
+}
+
+// ModelInfo represents model information
+type ModelInfo struct {
+	Name       string `json:"name"`
+	Size       int64  `json:"size"`
+	ModifiedAt string `json:"modified_at"`
+}
+
 // ChatCompletion performs a chat completion using the specified model
 func (c *OllamaClient) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	logger.LogInfo(logger.ServiceAI, "Starting chat completion", map[string]interface{}{
@@ -184,22 +203,36 @@ func (c *OllamaClient) Health(ctx context.Context) error {
 }
 
 // ListModels lists available models
-func (c *OllamaClient) ListModels(ctx context.Context) (*api.ListResponse, error) {
+func (c *OllamaClient) ListModels(ctx context.Context) (*ModelsResponse, error) {
 	models, err := c.client.List(ctx)
 	if err != nil {
 		logger.LogError(logger.ServiceAI, "Failed to list models", err)
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 
+	// Convert to our format
+	ourModels := make([]Model, 0, len(models.Models))
+	for _, model := range models.Models {
+		ourModels = append(ourModels, Model{
+			Name:       model.Name,
+			Size:       model.Size,
+			ModifiedAt: model.ModifiedAt.Format(time.RFC3339),
+		})
+	}
+
+	response := &ModelsResponse{
+		Models: ourModels,
+	}
+
 	logger.LogInfo(logger.ServiceAI, "Listed models", map[string]interface{}{
-		"count": len(models.Models),
+		"count": len(ourModels),
 	})
 
-	return models, nil
+	return response, nil
 }
 
 // GetModelInfo gets information about a specific model
-func (c *OllamaClient) GetModelInfo(ctx context.Context, modelName string) (*api.ShowResponse, error) {
+func (c *OllamaClient) GetModelInfo(ctx context.Context, modelName string) (*ModelInfo, error) {
 	req := api.ShowRequest{
 		Name: modelName,
 	}
@@ -214,7 +247,14 @@ func (c *OllamaClient) GetModelInfo(ctx context.Context, modelName string) (*api
 		"model": modelName,
 	})
 
-	return info, nil
+	// Convert to our format
+	modelInfo := &ModelInfo{
+		Name:       modelName, // Use the requested model name
+		Size:       0,         // Size not available in ShowResponse
+		ModifiedAt: info.ModifiedAt.Format(time.RFC3339),
+	}
+
+	return modelInfo, nil
 }
 
 // Helper function for min

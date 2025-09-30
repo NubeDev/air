@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Send, Paperclip, X, Database, BarChart3, HelpCircle } from 'lucide-react';
+import { Send, Paperclip, X, Database, BarChart3, HelpCircle, FileText } from 'lucide-react';
+import { chatApi } from '@/services/chatApi';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -9,6 +10,29 @@ interface ChatInputProps {
   placeholder?: string;
   attachedFiles?: File[];
   onRemoveFile?: (index: number) => void;
+  onAtCommand?: (command: string, args: string[]) => void;
+}
+
+interface AtCommand {
+  command: string;
+  description: string;
+  icon: React.ComponentType<any>;
+  usage: string;
+  examples: string[];
+}
+
+interface FileItem {
+  file_id: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+}
+
+interface DatasourceItem {
+  id: string;
+  name: string;
+  type: string;
+  connected: boolean;
 }
 
 export function ChatInput({ 
@@ -17,11 +41,20 @@ export function ChatInput({
   disabled = false, 
   placeholder = "Type your message...",
   attachedFiles = [],
-  onRemoveFile
+  onRemoveFile,
+  onAtCommand
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  const [showAtCommands, setShowAtCommands] = useState(false);
+  const [selectedAtCommandIndex, setSelectedAtCommandIndex] = useState(0);
+  const [atCommandType, setAtCommandType] = useState<'files' | 'db' | 'load-file' | null>(null);
+  const [atCommandQuery, setAtCommandQuery] = useState('');
+  const [availableFiles, setAvailableFiles] = useState<FileItem[]>([]);
+  const [availableDatasources, setAvailableDatasources] = useState<DatasourceItem[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isLoadingDatasources, setIsLoadingDatasources] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -50,11 +83,103 @@ export function ChatInput({
     }
   ];
 
+  // Define available @ commands
+  const atCommands: AtCommand[] = [
+    {
+      command: '@files',
+      description: 'List available files',
+      icon: FileText,
+      usage: '@files',
+      examples: ['@files']
+    },
+    {
+      command: '@db',
+      description: 'List available databases',
+      icon: Database,
+      usage: '@db',
+      examples: ['@db']
+    },
+    {
+      command: '@load-file',
+      description: 'Load a specific file',
+      icon: FileText,
+      usage: '@load-file/<filename>',
+      examples: ['@load-file/abc.csv']
+    }
+  ];
+
   // Filter commands based on current input
   const filteredCommands = commands.filter(cmd => 
     cmd.command.toLowerCase().includes(message.toLowerCase().replace('/', '')) ||
     cmd.description.toLowerCase().includes(message.toLowerCase().replace('/', ''))
   );
+
+  // Filter @ commands based on current input
+  const filteredAtCommands = atCommands.filter(cmd => 
+    cmd.command.toLowerCase().includes(message.toLowerCase().replace('@', '')) ||
+    cmd.description.toLowerCase().includes(message.toLowerCase().replace('@', ''))
+  );
+
+  // Load available files
+  const loadFiles = async () => {
+    setIsLoadingFiles(true);
+    try {
+      const response = await chatApi.getUploadedFiles();
+      setAvailableFiles(response.data.files || []);
+    } catch (error) {
+      console.error('Failed to load files:', error);
+      setAvailableFiles([]);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  // Load available datasources
+  const loadDatasources = async () => {
+    setIsLoadingDatasources(true);
+    try {
+      const response = await chatApi.getDatasources();
+      setAvailableDatasources(response.data.datasources || []);
+    } catch (error) {
+      console.error('Failed to load datasources:', error);
+      setAvailableDatasources([]);
+    } finally {
+      setIsLoadingDatasources(false);
+    }
+  };
+
+  // Handle @ command detection
+  useEffect(() => {
+    if (message.startsWith('@') && message.length > 0) {
+      setShowAtCommands(true);
+      setSelectedAtCommandIndex(0);
+      
+      // Parse @ command
+      const parts = message.split(' ');
+      const atPart = parts[0];
+      
+      if (atPart === '@files' || atPart.startsWith('@files')) {
+        setAtCommandType('files');
+        setAtCommandQuery(atPart.replace('@files', ''));
+        loadFiles();
+      } else if (atPart === '@db' || atPart.startsWith('@db')) {
+        setAtCommandType('db');
+        setAtCommandQuery(atPart.replace('@db', ''));
+        loadDatasources();
+      } else if (atPart.startsWith('@load-file/')) {
+        setAtCommandType('load-file');
+        setAtCommandQuery(atPart.replace('@load-file/', ''));
+        loadFiles();
+      } else {
+        setAtCommandType(null);
+        setAtCommandQuery('');
+      }
+    } else {
+      setShowAtCommands(false);
+      setAtCommandType(null);
+      setAtCommandQuery('');
+    }
+  }, [message]);
 
   // Handle slash command detection
   useEffect(() => {
@@ -69,14 +194,59 @@ export function ChatInput({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !disabled) {
+      // Handle @ commands
+      if (message.startsWith('@') && onAtCommand) {
+        const parts = message.split(' ');
+        const command = parts[0];
+        const args = parts.slice(1);
+        onAtCommand(command, args);
+        setMessage('');
+        setShowAtCommands(false);
+        return;
+      }
+      
       onSend(message.trim());
       setMessage('');
       setShowCommands(false);
+      setShowAtCommands(false);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (showCommands) {
+    if (showAtCommands) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedAtCommandIndex(prev => 
+          prev < filteredAtCommands.length - 1 ? prev + 1 : 0
+        );
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedAtCommandIndex(prev => 
+          prev > 0 ? prev - 1 : filteredAtCommands.length - 1
+        );
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (filteredAtCommands[selectedAtCommandIndex]) {
+          const selectedCmd = filteredAtCommands[selectedAtCommandIndex];
+          if (selectedCmd.examples.length > 0) {
+            setMessage(selectedCmd.examples[0]);
+          } else {
+            setMessage(selectedCmd.command + ' ');
+          }
+          setShowAtCommands(false);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowAtCommands(false);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        if (filteredAtCommands[selectedAtCommandIndex]) {
+          const selectedCmd = filteredAtCommands[selectedAtCommandIndex];
+          setMessage(selectedCmd.command + ' ');
+          setShowAtCommands(false);
+        }
+      }
+    } else if (showCommands) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedCommandIndex(prev => 
@@ -101,6 +271,13 @@ export function ChatInput({
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setShowCommands(false);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        if (filteredCommands[selectedCommandIndex]) {
+          const selectedCmd = filteredCommands[selectedCommandIndex];
+          setMessage(selectedCmd.command + ' ');
+          setShowCommands(false);
+        }
       }
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -125,7 +302,29 @@ export function ChatInput({
     textareaRef.current?.focus();
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAtCommandSelect = (command: AtCommand) => {
+    if (command.examples.length > 0) {
+      setMessage(command.examples[0]);
+    } else {
+      setMessage(command.command + ' ');
+    }
+    setShowAtCommands(false);
+    textareaRef.current?.focus();
+  };
+
+  const handleFileSelect = (file: FileItem) => {
+    setMessage(`@load-file/${file.filename} `);
+    setShowAtCommands(false);
+    textareaRef.current?.focus();
+  };
+
+  const handleDatasourceSelect = (datasource: DatasourceItem) => {
+    setMessage(`@db/${datasource.id} `);
+    setShowAtCommands(false);
+    textareaRef.current?.focus();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0 && onFileAttach) {
       onFileAttach(files[0]);
@@ -159,7 +358,149 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Command Autocomplete Dropdown */}
+      {/* @ Command Autocomplete Dropdown */}
+      {showAtCommands && (
+        <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+          {atCommandType === 'files' && (
+            <div className="p-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <FileText className="h-4 w-4" />
+                Available Files
+                {isLoadingFiles && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+              </div>
+            </div>
+          )}
+          
+          {atCommandType === 'db' && (
+            <div className="p-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <Database className="h-4 w-4" />
+                Available Databases
+                {isLoadingDatasources && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+              </div>
+            </div>
+          )}
+          
+          {atCommandType === 'load-file' && (
+            <div className="p-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <FileText className="h-4 w-4" />
+                Load File: {atCommandQuery}
+                {isLoadingFiles && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+              </div>
+            </div>
+          )}
+
+          {/* Show @ commands when no specific type */}
+          {!atCommandType && filteredAtCommands.map((command, index) => {
+            const IconComponent = command.icon;
+            return (
+              <div
+                key={command.command}
+                className={`flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                  index === selectedAtCommandIndex 
+                    ? 'bg-blue-50 text-blue-700' 
+                    : 'hover:bg-gray-50'
+                }`}
+                onClick={() => handleAtCommandSelect(command)}
+              >
+                <IconComponent className="h-4 w-4 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-medium">{command.command}</span>
+                    <span className="text-xs text-gray-500">{command.usage}</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">{command.description}</p>
+                  {command.examples.length > 0 && (
+                    <div className="mt-1">
+                      <p className="text-xs text-gray-500">Examples:</p>
+                      {command.examples.slice(0, 2).map((example, idx) => (
+                        <p key={idx} className="text-xs font-mono text-gray-600">{example}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Show files list with filtering */}
+          {atCommandType === 'files' && availableFiles
+            .filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase()))
+            .map((file) => (
+            <div
+              key={file.file_id}
+              className="flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+              onClick={() => handleFileSelect(file)}
+            >
+              <FileText className="h-4 w-4 flex-shrink-0 text-blue-600" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{file.filename}</div>
+                <div className="text-xs text-gray-500">{file.file_type} • {Math.round(file.file_size / 1024)}KB</div>
+              </div>
+            </div>
+          ))}
+
+          {/* Show datasources list */}
+          {atCommandType === 'db' && availableDatasources.map((datasource) => (
+            <div
+              key={datasource.id}
+              className="flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+              onClick={() => handleDatasourceSelect(datasource)}
+            >
+              <Database className="h-4 w-4 flex-shrink-0 text-green-600" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{datasource.name}</div>
+                <div className="text-xs text-gray-500">{datasource.type} • {datasource.connected ? 'Connected' : 'Disconnected'}</div>
+              </div>
+            </div>
+          ))}
+
+          {/* Show filtered files for load-file */}
+          {atCommandType === 'load-file' && availableFiles
+            .filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase()))
+            .map((file) => (
+            <div
+              key={file.file_id}
+              className="flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+              onClick={() => handleFileSelect(file)}
+            >
+              <FileText className="h-4 w-4 flex-shrink-0 text-blue-600" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{file.filename}</div>
+                <div className="text-xs text-gray-500">{file.file_type} • {Math.round(file.file_size / 1024)}KB</div>
+              </div>
+            </div>
+          ))}
+
+          {/* Empty states */}
+          {atCommandType === 'files' && !isLoadingFiles && availableFiles.length === 0 && (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              No files available. Upload a file first.
+            </div>
+          )}
+
+          {atCommandType === 'files' && !isLoadingFiles && availableFiles.length > 0 && availableFiles.filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase())).length === 0 && (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              No files match "{atCommandQuery}". Try a different search.
+            </div>
+          )}
+
+          {atCommandType === 'db' && !isLoadingDatasources && availableDatasources.length === 0 && (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              No databases available. Configure a datasource first.
+            </div>
+          )}
+
+          {atCommandType === 'load-file' && !isLoadingFiles && availableFiles.filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase())).length === 0 && (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              No files match "{atCommandQuery}". Try a different search.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Slash Command Autocomplete Dropdown */}
       {showCommands && filteredCommands.length > 0 && (
         <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
           {filteredCommands.map((command, index) => {
@@ -243,7 +584,7 @@ export function ChatInput({
         <input
           ref={fileInputRef}
           type="file"
-          onChange={handleFileSelect}
+          onChange={handleFileUpload}
           className="hidden"
           accept=".csv,.json,.xlsx,.xls,.parquet"
         />

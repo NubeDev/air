@@ -20,24 +20,32 @@ import (
 type AIService struct {
 	registry          *datasource.Registry
 	db                *gorm.DB
-	ollamaClient      *llm.OllamaClient
-	config            *config.Config
+	llmClient         llm.LLMClient
+	sqlClient         llm.LLMClient
+	Config            *config.Config
 	datasourceService *DatasourceService
 }
 
 // NewAIService creates a new AI service
 func NewAIService(registry *datasource.Registry, db *gorm.DB, cfg *config.Config, datasourceService *DatasourceService) (*AIService, error) {
-	// Initialize Ollama client
-	ollamaClient, err := llm.NewOllamaClient(cfg.Models.Ollama)
+	// Initialize LLM client for chat
+	llmClient, err := llm.NewLLMClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Ollama client: %w", err)
+		return nil, fmt.Errorf("failed to create LLM client: %w", err)
+	}
+
+	// Initialize SQL client (could be different from chat client)
+	sqlClient, err := llm.NewSQLClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SQL client: %w", err)
 	}
 
 	return &AIService{
 		registry:          registry,
 		db:                db,
-		ollamaClient:      ollamaClient,
-		config:            cfg,
+		llmClient:         llmClient,
+		sqlClient:         sqlClient,
+		Config:            cfg,
 		datasourceService: datasourceService,
 	}, nil
 }
@@ -102,10 +110,7 @@ func (s *AIService) BuildIR(req store.BuildIRRequest) (map[string]interface{}, e
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	model := s.config.Models.Ollama.Llama3Model
-	if model == "" {
-		model = "llama3"
-	}
+	model := llm.GetModelName(s.Config, "chat")
 
 	chatReq := llm.ChatRequest{
 		Model:    model,
@@ -117,7 +122,7 @@ func (s *AIService) BuildIR(req store.BuildIRRequest) (map[string]interface{}, e
 		},
 	}
 
-	resp, err := s.ollamaClient.ChatCompletion(ctx, chatReq)
+	resp, err := s.llmClient.ChatCompletion(ctx, chatReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build IR: %w", err)
 	}
@@ -694,10 +699,7 @@ func (s *AIService) AnalyzeRun(runID uint, req store.AnalyzeRunRequest) (*store.
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	model := s.config.Models.Ollama.Llama3Model
-	if model == "" {
-		model = "llama3"
-	}
+	model := llm.GetModelName(s.Config, "chat")
 
 	chatReq := llm.ChatRequest{
 		Model:    model,
@@ -706,7 +708,7 @@ func (s *AIService) AnalyzeRun(runID uint, req store.AnalyzeRunRequest) (*store.
 		Options:  &api.Options{Temperature: 0.3, TopP: 0.9},
 	}
 
-	resp, err := s.ollamaClient.ChatCompletion(ctx, chatReq)
+	resp, err := s.llmClient.ChatCompletion(ctx, chatReq)
 	if err != nil {
 		return nil, fmt.Errorf("analysis failed: %w", err)
 	}
@@ -758,34 +760,37 @@ func (s *AIService) GetAITools() ([]map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Check Ollama health first
-	if err := s.ollamaClient.Health(ctx); err != nil {
-		return nil, fmt.Errorf("ollama service unavailable: %w", err)
+	// Check LLM health first
+	if err := s.llmClient.Health(ctx); err != nil {
+		return nil, fmt.Errorf("LLM service unavailable: %w", err)
 	}
 
 	// List available models
-	models, err := s.ollamaClient.ListModels(ctx)
+	models, err := s.llmClient.ListModels(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
+
+	chatModel := llm.GetModelName(s.Config, "chat")
+	sqlModel := llm.GetModelName(s.Config, "sql")
 
 	tools := []map[string]interface{}{
 		{
 			"name":        "chat_completion",
 			"description": "Generate chat completions using available models",
-			"models":      []string{s.config.Models.Ollama.Llama3Model},
+			"models":      []string{chatModel},
 			"type":        "chat",
 		},
 		{
 			"name":        "sql_generation",
-			"description": "Generate SQL queries using SQLCoder model",
-			"models":      []string{s.config.Models.Ollama.SQLCoderModel},
+			"description": "Generate SQL queries using SQL model",
+			"models":      []string{sqlModel},
 			"type":        "sql",
 		},
 		{
 			"name":        "text_generation",
 			"description": "Generate text using available models",
-			"models":      []string{s.config.Models.Ollama.Llama3Model},
+			"models":      []string{chatModel},
 			"type":        "generate",
 		},
 	}
@@ -800,9 +805,14 @@ func (s *AIService) GetAITools() ([]map[string]interface{}, error) {
 		})
 	}
 
+	provider := "Ollama"
+	if s.Config.Models.ChatPrimary == "openai" {
+		provider = "OpenAI"
+	}
+
 	return append(tools, map[string]interface{}{
 		"name":        "available_models",
-		"description": "List of available Ollama models",
+		"description": fmt.Sprintf("List of available %s models", provider),
 		"models":      modelInfo,
 		"type":        "info",
 	}), nil
@@ -813,10 +823,7 @@ func (s *AIService) ChatCompletion(messages []llm.Message) (*llm.ChatResponse, e
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	model := s.config.Models.Ollama.Llama3Model
-	if model == "" {
-		model = "llama3"
-	}
+	model := llm.GetModelName(s.Config, "chat")
 
 	req := llm.ChatRequest{
 		Model:    model,
@@ -828,7 +835,7 @@ func (s *AIService) ChatCompletion(messages []llm.Message) (*llm.ChatResponse, e
 		},
 	}
 
-	return s.ollamaClient.ChatCompletion(ctx, req)
+	return s.llmClient.ChatCompletion(ctx, req)
 }
 
 // GenerateSQL generates SQL using SQLCoder model
@@ -836,10 +843,7 @@ func (s *AIService) GenerateSQL(prompt string, schema string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	model := s.config.Models.Ollama.SQLCoderModel
-	if model == "" {
-		model = "sqlcoder"
-	}
+	model := llm.GetModelName(s.Config, "sql")
 
 	// Create a comprehensive prompt for SQL generation using SQLCoder format
 	fullPrompt := fmt.Sprintf(`-- Database: PostgreSQL
@@ -859,7 +863,7 @@ SELECT`, schema, prompt)
 		},
 	}
 
-	resp, err := s.ollamaClient.GenerateText(ctx, req)
+	resp, err := s.sqlClient.GenerateText(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("SQL generation failed: %w", err)
 	}
