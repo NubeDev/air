@@ -11,6 +11,7 @@ import (
 	"github.com/NubeDev/air/internal/config"
 	"github.com/NubeDev/air/internal/datasource"
 	"github.com/NubeDev/air/internal/logger"
+	"github.com/NubeDev/air/internal/redis"
 	"github.com/NubeDev/air/internal/store"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -23,6 +24,7 @@ type Server struct {
 	db       *gorm.DB
 	registry *datasource.Registry
 	jwtMgr   *auth.JWTManager
+	redis    *redis.Client
 	router   *gin.Engine
 }
 
@@ -71,10 +73,28 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		logger.LogWarn(logger.ServiceAuth, "Authentication disabled")
 	}
 
+	// Initialize Redis client
+	logger.LogInfo(logger.ServiceRedis, "Initializing Redis client", map[string]interface{}{
+		"enabled": cfg.Redis.Enabled,
+		"url":     cfg.Redis.URL,
+	})
+
+	redisClient, err := redis.NewClient(&cfg.Redis)
+	if err != nil {
+		logger.LogError(logger.ServiceRedis, "Failed to initialize Redis client", err)
+		return nil, fmt.Errorf("failed to initialize Redis client: %w", err)
+	}
+
+	if redisClient != nil {
+		logger.LogInfo(logger.ServiceRedis, "Redis client initialized successfully")
+	} else {
+		logger.LogWarn(logger.ServiceRedis, "Redis client is disabled")
+	}
+
 	// Setup router
 	logger.LogInfo(logger.ServiceREST, "Setting up HTTP router")
 
-	router := setupRouter(cfg, db, registry, jwtManager)
+	router := setupRouter(cfg, db, registry, jwtManager, redisClient)
 	logger.LogInfo(logger.ServiceREST, "HTTP router setup complete")
 
 	logger.LogInfo(logger.ServiceServer, "AIR server initialization complete")
@@ -83,6 +103,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		db:       db,
 		registry: registry,
 		jwtMgr:   jwtManager,
+		redis:    redisClient,
 		router:   router,
 	}, nil
 }
@@ -102,7 +123,25 @@ func (s *Server) Start() error {
 
 // Close closes the server and cleans up resources
 func (s *Server) Close() error {
-	return s.registry.Close()
+	var err error
+
+	// Close Redis connection
+	if s.redis != nil {
+		if redisErr := s.redis.Close(); redisErr != nil {
+			logger.LogError(logger.ServiceRedis, "Failed to close Redis connection", redisErr)
+			err = redisErr
+		}
+	}
+
+	// Close datasource registry
+	if registryErr := s.registry.Close(); registryErr != nil {
+		logger.LogError(logger.ServiceDB, "Failed to close datasource registry", registryErr)
+		if err == nil {
+			err = registryErr
+		}
+	}
+
+	return err
 }
 
 func initDatabase(cfg *config.Config) (*gorm.DB, error) {
@@ -133,7 +172,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-func setupRouter(cfg *config.Config, db *gorm.DB, registry *datasource.Registry, jwtManager *auth.JWTManager) *gin.Engine {
+func setupRouter(cfg *config.Config, db *gorm.DB, registry *datasource.Registry, jwtManager *auth.JWTManager, redisClient *redis.Client) *gin.Engine {
 	// Set Gin mode
 	if os.Getenv("GIN_MODE") == "" {
 		gin.SetMode(gin.ReleaseMode)
@@ -150,7 +189,7 @@ func setupRouter(cfg *config.Config, db *gorm.DB, registry *datasource.Registry,
 	setupMiddleware(router)
 
 	// Setup routes
-	routes.SetupRoutes(router, cfg, db, registry, jwtManager)
+	routes.SetupRoutes(router, cfg, db, registry, jwtManager, redisClient)
 
 	return router
 }

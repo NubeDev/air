@@ -19,6 +19,7 @@ const (
 	ServiceAuth   = "AUTH"
 	ServiceConfig = "CONF"
 	ServiceFile   = "FILE"
+	ServiceRedis  = "REDI"
 )
 
 // Log levels (4 letters for consistency)
@@ -39,6 +40,7 @@ var serviceColors = map[string]int{
 	ServiceAuth:   31, // Red
 	ServiceConfig: 34, // Blue
 	ServiceFile:   37, // White
+	ServiceRedis:  31, // Red
 }
 
 // Level colors

@@ -6,13 +6,14 @@ import (
 	"github.com/NubeDev/air/internal/auth"
 	"github.com/NubeDev/air/internal/config"
 	"github.com/NubeDev/air/internal/datasource"
+	"github.com/NubeDev/air/internal/redis"
 	"github.com/NubeDev/air/internal/services"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // SetupRoutes configures all API routes
-func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *datasource.Registry, jwtManager *auth.JWTManager) {
+func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *datasource.Registry, jwtManager *auth.JWTManager, redisClient *redis.Client) {
 	// Initialize services
 	datasourceService := services.NewDatasourceService(registry, db)
 	aiService := services.NewAIService(registry, db)
@@ -54,8 +55,8 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 		}
 	}
 
-	// WebSocket endpoint
+	// WebSocket routes
 	if cfg.Server.WSEnabled {
-		router.GET("/v1/ws", health.WebSocketHandler())
+		SetupWebSocketRoutes(router, redisClient, &cfg.WebSocket)
 	}
 }

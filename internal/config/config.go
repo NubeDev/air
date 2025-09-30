@@ -15,6 +15,9 @@ type Config struct {
 	Models           ModelsConfig            `mapstructure:"models"`
 	Safety           SafetyConfig            `mapstructure:"safety"`
 	Telemetry        TelemetryConfig         `mapstructure:"telemetry"`
+	Redis            RedisConfig             `mapstructure:"redis"`
+	WebSocket        WebSocketConfig         `mapstructure:"websocket"`
+	Chat             ChatConfig              `mapstructure:"chat"`
 }
 
 // ServerConfig holds server configuration
@@ -91,6 +94,44 @@ type TelemetryConfig struct {
 	Color      bool   `mapstructure:"color"`
 }
 
+// RedisConfig holds Redis configuration
+type RedisConfig struct {
+	Enabled      bool          `mapstructure:"enabled"`
+	URL          string        `mapstructure:"url"`
+	Password     string        `mapstructure:"password"`
+	DB           int           `mapstructure:"db"`
+	MaxRetries   int           `mapstructure:"max_retries"`
+	DialTimeout  time.Duration `mapstructure:"dial_timeout"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+	PoolSize     int           `mapstructure:"pool_size"`
+	MinIdleConns int           `mapstructure:"min_idle_conns"`
+}
+
+// WebSocketConfig holds WebSocket configuration
+type WebSocketConfig struct {
+	Enabled           bool          `mapstructure:"enabled"`
+	BufferSize        int           `mapstructure:"buffer_size"`
+	ReadBufferSize    int           `mapstructure:"read_buffer_size"`
+	WriteBufferSize   int           `mapstructure:"write_buffer_size"`
+	HandshakeTimeout  time.Duration `mapstructure:"handshake_timeout"`
+	PingPeriod        time.Duration `mapstructure:"ping_period"`
+	PongWait          time.Duration `mapstructure:"pong_wait"`
+	MaxMessageSize    int64         `mapstructure:"max_message_size"`
+	EnableCompression bool          `mapstructure:"enable_compression"`
+}
+
+// ChatConfig holds live chat configuration
+type ChatConfig struct {
+	Enabled           bool          `mapstructure:"enabled"`
+	MessageRetention  time.Duration `mapstructure:"message_retention"`
+	TypingTimeout     time.Duration `mapstructure:"typing_timeout"`
+	PresenceTimeout   time.Duration `mapstructure:"presence_timeout"`
+	MaxRoomSize       int           `mapstructure:"max_room_size"`
+	AIStreaming       bool          `mapstructure:"ai_streaming"`
+	AIResponseTimeout time.Duration `mapstructure:"ai_response_timeout"`
+}
+
 // Load loads configuration from file and environment variables
 func Load(configPath string) (*Config, error) {
 	viper.SetConfigFile(configPath)
@@ -120,6 +161,38 @@ func Load(configPath string) (*Config, error) {
 	viper.SetDefault("telemetry.format", "console")
 	viper.SetDefault("telemetry.time_format", "15:04:05")
 	viper.SetDefault("telemetry.color", true)
+
+	// Redis defaults
+	viper.SetDefault("redis.enabled", true)
+	viper.SetDefault("redis.url", "redis://localhost:6379/0")
+	viper.SetDefault("redis.password", "")
+	viper.SetDefault("redis.db", 0)
+	viper.SetDefault("redis.max_retries", 3)
+	viper.SetDefault("redis.dial_timeout", "5s")
+	viper.SetDefault("redis.read_timeout", "3s")
+	viper.SetDefault("redis.write_timeout", "3s")
+	viper.SetDefault("redis.pool_size", 10)
+	viper.SetDefault("redis.min_idle_conns", 5)
+
+	// WebSocket defaults
+	viper.SetDefault("websocket.enabled", true)
+	viper.SetDefault("websocket.buffer_size", 1024)
+	viper.SetDefault("websocket.read_buffer_size", 4096)
+	viper.SetDefault("websocket.write_buffer_size", 4096)
+	viper.SetDefault("websocket.handshake_timeout", "10s")
+	viper.SetDefault("websocket.ping_period", "54s")
+	viper.SetDefault("websocket.pong_wait", "60s")
+	viper.SetDefault("websocket.max_message_size", 512)
+	viper.SetDefault("websocket.enable_compression", true)
+
+	// Chat defaults
+	viper.SetDefault("chat.enabled", true)
+	viper.SetDefault("chat.message_retention", "24h")
+	viper.SetDefault("chat.typing_timeout", "5s")
+	viper.SetDefault("chat.presence_timeout", "5m")
+	viper.SetDefault("chat.max_room_size", 100)
+	viper.SetDefault("chat.ai_streaming", true)
+	viper.SetDefault("chat.ai_response_timeout", "30s")
 
 	// Enable reading from environment variables
 	viper.AutomaticEnv()
