@@ -91,6 +91,7 @@ type ReportRun struct {
 	ParamsJSON      string     `gorm:"type:text" json:"params_json"`
 	SQLText         string     `gorm:"type:text" json:"sql_text"`
 	RowCount        int        `json:"row_count"`
+	Results         string     `gorm:"type:text" json:"results"` // JSON array of query results
 	StartedAt       time.Time  `json:"started_at"`
 	FinishedAt      *time.Time `json:"finished_at"`
 	Status          string     `gorm:"default:'running'" json:"status"` // "running", "completed", "failed"
@@ -246,7 +247,14 @@ type CreateScopeVersionRequest struct {
 
 // BuildIRRequest represents the request to build IR from scope
 type BuildIRRequest struct {
-	ScopeVersionID uint `json:"scope_version_id" binding:"required"`
+	ScopeVersionID uint   `json:"scope_version_id" binding:"required"`
+	DatasourceID   string `json:"datasource_id" binding:"required"`
+}
+
+// GetSchemaResponse represents the response from getting schema information
+type GetSchemaResponse struct {
+	DatasourceID string   `json:"datasource_id"`
+	SchemaNotes  []string `json:"schema_notes"`
 }
 
 // GenerateSQLRequest represents the request to generate SQL

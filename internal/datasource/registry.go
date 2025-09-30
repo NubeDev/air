@@ -11,6 +11,7 @@ import (
 	"github.com/NubeDev/air/internal/store"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
 )
 
@@ -128,6 +129,8 @@ func (r *Registry) openConnection(kind, dsn string) (*sql.DB, error) {
 		driver = "postgres"
 	case "mysql":
 		driver = "mysql"
+	case "sqlite":
+		driver = "sqlite3"
 	default:
 		return nil, fmt.Errorf("unsupported database kind: %s", kind)
 	}

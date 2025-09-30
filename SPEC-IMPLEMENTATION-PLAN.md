@@ -1,34 +1,26 @@
 # AIR Implementation Plan - Database + File Processing
 
-## 🎯 **Architecture Overview**
+## 🎯 Architecture Overview
 
-AIR supports **dual processing paths** for both database and file-based data analysis:
+AIR supports dual processing paths for both database and file-based data analysis.
 
-### **📊 Database Processing Path**
-- **Datasources**: TimescaleDB, PostgreSQL, MySQL, etc.
-- **Models**: `Datasource`, `Scope`, `ScopeVersion`, `Report`, `ReportVersion`, `ReportRun`
-- **Endpoints**: `/v1/datasources/*`, `/v1/reports/*`, `/v1/scopes/*`
-- **Processing**: Direct SQL execution on databases
-- **Status**: **Partially implemented** (datasource management works, reports/scopes are stubs)
+- DB execution is done in Go against registered analytics datasources (SQLite, Postgres, MySQL, Timescale).
+- File reads and ad-hoc file processing are done in Python FastAPI (no ingestion by default).
+- Scope generation/refinement uses Llama/ChatGPT; SQL generation uses SQLCoder only.
 
-### **📁 File Processing Path**
-- **Files**: CSV, Parquet, JSONL files
-- **Models**: `Session`, `GeneratedReport`, `ReportExecution`
-- **Endpoints**: `/v1/sessions/*`, `/v1/generated/reports/*`
-- **Processing**: Python FastAPI backend handles file processing
-- **Status**: **Fully implemented** (sessions and generated reports work)
+## 🚦 Phase 0: Datasource Registration (SQLite + PG + MySQL + Files)
+- Register analytics datasources via Go using `/v1/datasources` and `internal/datasource` registry:
+  - SQLite: `dsn: "file:/data/analytics.db?_fk=1"`
+  - Postgres: `dsn: "postgres://user:pass@host:5432/db?sslmode=disable"`
+  - MySQL: `dsn: "user:pass@tcp(host:3306)/db"`
+  - Files: `base_path: "/data/files"`
+- Ensure separate SQLite analytics DB (not `air.db`).
 
-### **🤖 AI Services (Shared)**
-- **AI Tools**: `/v1/ai/tools`, `/v1/ai/chat/completion`
-- **SQL Generation**: `/v1/sql/generate`
-- **Status**: **Fully implemented**
+## 🚀 Implementation Tasks
 
-## 🚀 **Implementation Tasks**
+### Phase 1: Complete Database Workflow (HIGH)
 
-### **Phase 1: Complete Database Workflow** 
-**Priority: HIGH** - Database processing is core functionality
-
-#### **1.1 Implement Reports Service** (`internal/services/reports_service.go`)
+#### 1.1 Reports Service (`internal/services/reports_service.go`)
 - [ ] `CreateScope(req CreateScopeRequest) (*Scope, error)`
 - [ ] `GetScope(id uint) (*Scope, error)`
 - [ ] `CreateScopeVersion(scopeID uint, req CreateScopeVersionRequest) (*ScopeVersion, error)`
@@ -38,69 +30,48 @@ AIR supports **dual processing paths** for both database and file-based data ana
 - [ ] `RunReport(reportKey string, req RunReportRequest) (*ReportRun, error)`
 - [ ] `ExportReport(reportKey string, format string) ([]byte, error)`
 
-#### **1.2 Implement AI Service Database Methods** (`internal/services/ai_service.go`)
-- [ ] `BuildIR(req BuildIRRequest) (map[string]interface{}, error)` - Convert scope to IR
-- [ ] `GenerateSQLFromIR(req GenerateSQLRequest) (string, map[string]interface{}, error)` - Generate SQL from IR
-- [ ] `AnalyzeRun(req AnalyzeRunRequest) (*ReportAnalysis, error)` - AI analysis of results
+#### 1.2 AI Service (DB) (`internal/services/ai_service.go`)
+- [ ] `BuildIR(req BuildIRRequest)` → use Llama/ChatGPT to turn scope markdown into IR JSON
+- [ ] `GenerateSQLFromIR(req GenerateSQLRequest)` → SQLCoder only; no heuristic fallback
+- [ ] `AnalyzeRun(runID, req)` → use Llama/ChatGPT to analyze execution results
 
-#### **1.3 Implement Datasource Service Learning** (`internal/services/datasource_service.go`)
-- [ ] `LearnDatasource(req LearnDatasourceRequest) error` - Learn schema from database
-- [ ] `GetSchema(datasourceID string) ([]SchemaNote, error)` - Get learned schema
+#### 1.3 Datasource Learning (`internal/services/datasource_service.go`)
+- [ ] `LearnDatasource(req)` → learn schema from DB; store `SchemaNote`
+- [ ] `GetSchema(datasourceID)` → return learned schema
 
-### **Phase 2: Complete File Learning Workflow**
-**Priority: HIGH** - Interactive learning is core to the file processing experience
+### Phase 2: Complete File Learning Workflow (HIGH)
 
-#### **2.1 Add Session Learning Endpoints** (`cmd/api/handlers/sessions/`)
-- [ ] `POST /v1/sessions/{id}/ask` - Ask questions about data
-- [ ] `POST /v1/sessions/{id}/scope/build` - Build analysis scope
-- [ ] `POST /v1/sessions/{id}/scope/refine` - Refine scope with feedback
-- [ ] `POST /v1/sessions/{id}/query/generate` - Generate query plan
-- [ ] `POST /v1/sessions/{id}/execute` - Execute analysis
-- [ ] `POST /v1/sessions/{id}/analyze` - AI analysis of results
-- [ ] `POST /v1/sessions/{id}/save` - Save as reusable API
+- File reads stay in Python. No ingestion into DB unless explicitly requested later.
 
-#### **2.2 Add Session Learning Service** (`internal/services/session_service.go`)
-- [ ] `AskQuestion(sessionID uint, question string) (*ChatResponse, error)`
-- [ ] `BuildScope(sessionID uint, req BuildScopeRequest) (*Scope, error)`
-- [ ] `RefineScope(sessionID uint, scopeID uint, feedback string) (*Scope, error)`
-- [ ] `GenerateQuery(sessionID uint, scopeID uint) (*QueryPlan, error)`
-- [ ] `ExecuteAnalysis(sessionID uint, queryID uint, params map[string]interface{}) (*ExecutionResult, error)`
-- [ ] `AnalyzeResults(sessionID uint, runID uint) (*AnalysisResult, error)`
-- [ ] `SaveAsAPI(sessionID uint, req SaveAsAPIRequest) (*GeneratedReport, error)`
+#### 2.1 Session Learning Endpoints (`cmd/api/handlers/sessions/`)
+- [ ] `POST /v1/sessions/{id}/ask` → Llama/ChatGPT Q&A
+- [ ] `POST /v1/sessions/{id}/scope/build` → Draft scope (LLM)
+- [ ] `POST /v1/sessions/{id}/scope/refine` → Refine scope (LLM)
+- [ ] `POST /v1/sessions/{id}/query/generate` → Build file query plan (LLM-assisted IR→plan)
+- [ ] `POST /v1/sessions/{id}/execute` → Call Python to execute plan
+- [ ] `POST /v1/sessions/{id}/analyze` → LLM analysis on results
+- [ ] `POST /v1/sessions/{id}/save` → Save as GeneratedReport
 
-#### **2.3 Add Python FastAPI Integration** (`internal/services/fastapi_client.go`)
-- [ ] `LearnFile(sessionID string, filePath string, options FileLearnOptions) (*FileLearnResponse, error)`
-- [ ] `ExecuteFileQuery(sessionID string, queryPlan QueryPlan, params map[string]interface{}) (*ExecutionResult, error)`
-- [ ] `AnalyzeFileResults(sessionID string, results ExecutionResult) (*AnalysisResult, error)`
+#### 2.2 Session Service (`internal/services/session_service.go`)
+- [ ] `AskQuestion`, `BuildScope`, `RefineScope`
+- [ ] `GenerateQuery`, `ExecuteAnalysis`, `AnalyzeResults`, `SaveAsAPI`
 
-### **Phase 3: Unified Learning Pattern**
-**Priority: MEDIUM** - Both paths should follow the same workflow
+#### 2.3 FastAPI Integration (`internal/services/fastapi_client.go`)
+- [ ] `LearnFile` (infer schema, profiling)
+- [ ] `ExecuteFileQuery` (run query plan)
+- [ ] `AnalyzeFileResults`
 
-#### **3.1 Create Unified Learning Interface**
-- [ ] `internal/services/learning_service.go` - Unified interface for both DB and file learning
-- [ ] `internal/services/scope_builder.go` - Unified scope building logic
-- [ ] `internal/services/query_generator.go` - Unified query generation logic
+### Phase 3: Unified Learning Pattern (MEDIUM)
+- [ ] `learning_service.go` unifies DB/file learning
+- [ ] `scope_builder.go` centralizes scope→IR (LLM)
+- [ ] `query_generator.go` centralizes IR→SQL (SQLCoder) or IR→plan (files)
 
-#### **3.2 Add Learning Workflow Endpoints**
-- [ ] `POST /v1/learn/{datasource_id}` - Start learning session for database
-- [ ] `POST /v1/learn/file` - Start learning session for file
-- [ ] `POST /v1/learn/{session_id}/ask` - Ask questions (unified)
-- [ ] `POST /v1/learn/{session_id}/scope` - Build scope (unified)
-- [ ] `POST /v1/learn/{session_id}/execute` - Execute analysis (unified)
+### Phase 4: UI Integration (MEDIUM)
+- [ ] `GET /v1/generated/reports/{id}/schema` (JSON Schema for forms)
+- [ ] `GET /v1/reports/{id}/schema`
+- [ ] Convert OpenAPI → JSON Schema; client-side validation and hints
 
-### **Phase 4: UI Integration**
-**Priority: MEDIUM** - Dynamic form generation for generated reports
-
-#### **4.1 Add Schema Endpoints**
-- [ ] `GET /v1/generated/reports/{id}/schema` - Get JSON Schema for form generation
-- [ ] `GET /v1/reports/{id}/schema` - Get JSON Schema for database reports
-
-#### **4.2 Add Form Generation Support**
-- [ ] Convert OpenAPI parameter schemas to JSON Schema format
-- [ ] Add form validation based on parameter schemas
-- [ ] Add example data and descriptions for form fields
-
-## 📁 **File Structure (Keep Current Layout)**
+## 📁 File Structure (Keep Current Layout)
 
 ```
 cmd/api/
@@ -138,47 +109,30 @@ dataserver/         # Python FastAPI backend (DON'T CHANGE)
 └── requirements.txt
 ```
 
-## 🎯 **Success Criteria**
+## ✅ Success Criteria
 
-### **Database Processing Complete When:**
-- [ ] User can register database datasources
-- [ ] User can learn schema from databases
-- [ ] User can create scopes and reports
-- [ ] User can generate and execute SQL queries
-- [ ] User can save analyses as reusable APIs
-- [ ] User can execute saved APIs with parameters
+### Database Processing
+- [ ] Datasources registered (SQLite, Postgres, MySQL, Files)
+- [ ] Scope → IR (LLM)
+- [ ] IR → SQL (SQLCoder)
+- [ ] SQL executes on selected datasource via Go
+- [ ] Reports saved and executed with parameters
 
-### **File Processing Complete When:**
-- [ ] User can start learning sessions with files
-- [ ] User can ask questions about file data
-- [ ] User can build analysis scopes interactively
-- [ ] User can generate and execute file queries
-- [ ] User can save analyses as reusable APIs
-- [ ] User can execute saved APIs with parameters
+### File Processing
+- [ ] Sessions over files
+- [ ] Scope/IR via LLM
+- [ ] Plan executed by Python
+- [ ] Generated APIs saved/executed
 
-### **Unified Experience When:**
-- [ ] Both database and file processing follow the same 8-step workflow
-- [ ] UI can dynamically generate forms for any generated API
-- [ ] AI provides consistent analysis across both data sources
-- [ ] Users can seamlessly switch between database and file analysis
+### Unified
+- [ ] Same 8-step workflow for DB and files
+- [ ] No heuristic data; outputs from models or real execution only
 
-## 🚨 **Important Notes**
+## Notes
+- Go executes SQL only on registered DBs.
+- Python handles file reads and execution for ad‑hoc file analysis.
+- No heuristic SQL fallback; errors bubble up to client with guidance.
 
-1. **Keep Current Go Layout** - Don't change the directory structure
-2. **Don't Change Python Stack** - The FastAPI backend is working well
-3. **Maintain Dual Support** - Both database and file processing must work
-4. **Preserve Existing APIs** - Don't break current functionality
-5. **Follow Specs** - Implement according to SPEC.md and SPEC-FILE-AI.md
-
-## 📋 **Next Steps**
-
-1. **Start with Phase 1** - Complete database workflow first
-2. **Then Phase 2** - Add file learning workflow
-3. **Finally Phase 3** - Unify the experience
-4. **Test Everything** - Ensure both paths work end-to-end
-
----
-
-**Last Updated**: 2025-09-30
-**Status**: Planning Phase
-**Priority**: Complete missing workflow endpoints for both database and file processing
+Last Updated: 2025-09-30
+Status: Planning Phase
+Priority: Implement Phase 0–2 first

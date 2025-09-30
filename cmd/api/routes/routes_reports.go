@@ -22,10 +22,20 @@ func SetupReportRoutes(rg *gin.RouterGroup, service *services.ReportsService, au
 	reportsGroup := rg.Group("/reports")
 	reportsGroup.Use(authMiddleware)
 	{
+		// ID-based endpoints
+		reportsGroup.GET("", reports.ListReports(service))
 		reportsGroup.POST("", reports.CreateReport(service))
-		reportsGroup.GET("/:key", reports.GetReport(service))
-		reportsGroup.POST("/:key/versions", reports.CreateReportVersion(service))
-		reportsGroup.POST("/:key/run", reports.RunReport(service))
-		reportsGroup.GET("/:key/export", reports.ExportReport(service))
+		reportsGroup.GET("/:id", reports.GetReportByID(service))
+		reportsGroup.GET("/:id/data", reports.GetReportData(service))
+		reportsGroup.GET("/:id/schema", reports.GetReportSchema(service))
+		reportsGroup.POST("/:id/versions", reports.CreateReportVersionByID(service))
+		reportsGroup.POST("/:id/execute", reports.ExecuteReportByID(service))
+		reportsGroup.DELETE("/:id", reports.DeleteReportByID(service))
+
+		// Legacy key-based (compat)
+		reportsGroup.GET("/key/:key", reports.GetReport(service))
+		reportsGroup.POST("/key/:key/versions", reports.CreateReportVersion(service))
+		reportsGroup.POST("/key/:key/run", reports.RunReport(service))
+		reportsGroup.GET("/key/:key/export", reports.ExportReport(service))
 	}
 }

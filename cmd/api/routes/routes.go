@@ -18,7 +18,7 @@ import (
 func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *datasource.Registry, jwtManager *auth.JWTManager, redisClient *redis.Client) {
 	// Initialize services
 	datasourceService := services.NewDatasourceService(registry, db)
-	aiService, err := services.NewAIService(registry, db, cfg)
+	aiService, err := services.NewAIService(registry, db, cfg, datasourceService)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize AI service: %v", err))
 	}
@@ -53,6 +53,7 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, registry *
 		SetupChatRoutes(v1, aiService, authMiddleware)
 		SetupSessionRoutes(v1, db, authMiddleware)
 		SetupGeneratedReportRoutes(v1, db, authMiddleware)
+		SetupCSVRoutes(v1, registry, db, authMiddleware)
 
 		// FastAPI integration routes
 		fastapiGroup := v1.Group("/fastapi")

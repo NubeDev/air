@@ -236,6 +236,8 @@ func (c *Config) Validate() error {
 		"postgres":    true,
 		"timescaledb": true,
 		"mysql":       true,
+		"sqlite":      true,
+		"files":       true,
 	}
 
 	ids := make(map[string]bool)
@@ -252,11 +254,12 @@ func (c *Config) Validate() error {
 		ids[source.ID] = true
 
 		if !validKinds[source.Kind] {
-			return fmt.Errorf("analytics_sources[%d].kind must be one of: postgres, timescaledb, mysql", i)
+			return fmt.Errorf("analytics_sources[%d].kind must be one of: postgres, timescaledb, mysql, sqlite, files", i)
 		}
 
-		if source.DSN == "" {
-			return fmt.Errorf("analytics_sources[%d].dsn is required", i)
+		// DSN required for SQL engines; files uses base_path
+		if (source.Kind == "postgres" || source.Kind == "timescaledb" || source.Kind == "mysql" || source.Kind == "sqlite") && source.DSN == "" {
+			return fmt.Errorf("analytics_sources[%d].dsn is required for kind %s", i, source.Kind)
 		}
 
 		if source.DisplayName == "" {

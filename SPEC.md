@@ -87,7 +87,7 @@ control_plane:            # AIR's own metadata store (GORM -> SQLite)
 
 analytics_sources:        # list of external, READ-ONLY engines
   - id: "ts-dev"          # unique key
-    kind: "timescaledb"   # "timescaledb" | "postgres" | "mysql"
+    kind: "timescaledb"   # "timescaledb" | "postgres" | "mysql" | "sqlite" | "files"
     dsn: "postgres://user:pass@localhost:5432/energy?sslmode=disable"
     display_name: "Timescale Dev"
     default: true
@@ -103,6 +103,10 @@ analytics_sources:        # list of external, READ-ONLY engines
     kind: "files"
     base_path: "/data/files/energy"
     display_name: "Energy Files (CSV/Parquet)"
+  - id: "sqlite-test"
+    kind: "sqlite"
+    dsn: "file:/data/files/test.db?_fk=1"
+    display_name: "Testing SQLite"
 
 python:                   # FastAPI microservice configuration
   enabled: true

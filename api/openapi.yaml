@@ -213,6 +213,34 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/csv/import:
+    post:
+      summary: Import CSV data
+      description: Import CSV data into a database table
+      tags:
+        - Data Import
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportCSVRequest'
+      responses:
+        '200':
+          description: CSV imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCSVResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/scopes:
     post:
       summary: Create scope
@@ -784,7 +812,7 @@ components:
           example: "ts-dev"
         kind:
           type: string
-          enum: [postgres, timescaledb, mysql]
+          enum: [postgres, timescaledb, mysql, sqlite, files]
           example: "timescaledb"
         display_name:
           type: string
@@ -842,18 +870,23 @@ components:
     # Request Models
     CreateDatasourceRequest:
       type: object
-      required: [id, kind, dsn, display_name]
+      required: [id, kind, display_name]
       properties:
         id:
           type: string
           example: "ts-dev"
         kind:
           type: string
-          enum: [postgres, timescaledb, mysql]
+          enum: [postgres, timescaledb, mysql, sqlite, files]
           example: "timescaledb"
         dsn:
           type: string
+          description: Required for SQL engines (postgres/timescaledb/mysql/sqlite)
           example: "postgres://user:pass@localhost:5432/energy?sslmode=disable"
+        base_path:
+          type: string
+          description: Required for files kind; ignored for SQL engines
+          example: "/data/files/energy"
         display_name:
           type: string
           example: "Timescale Dev"
@@ -1027,6 +1060,71 @@ components:
         rubric_version:
           type: string
           example: "1.0"
+
+    # CSV Import Models
+    ImportCSVRequest:
+      type: object
+      required:
+        - file_path
+        - table_name
+        - datasource_id
+      properties:
+        file_path:
+          type: string
+          description: Path to the CSV file to import
+          example: "testdata/ts-energy.csv"
+        table_name:
+          type: string
+          description: Name of the table to create/import into
+          example: "energy_data"
+        datasource_id:
+          type: string
+          description: ID of the datasource to import into
+          example: "sqlite-dev"
+        has_header:
+          type: boolean
+          description: Whether the CSV file has a header row
+          default: true
+        delimiter:
+          type: string
+          description: CSV delimiter character
+          default: ","
+        quote_char:
+          type: string
+          description: CSV quote character
+          default: "\""
+        create_table:
+          type: boolean
+          description: Whether to create the table if it doesn't exist
+          default: true
+        replace_data:
+          type: boolean
+          description: Whether to replace existing data in the table
+          default: false
+
+    ImportCSVResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        message:
+          type: string
+          example: "Successfully imported 38 rows"
+        table_name:
+          type: string
+          example: "energy_data"
+        rows_imported:
+          type: integer
+          example: 38
+        columns:
+          type: array
+          items:
+            type: string
+          example: ["timestamp", "site", "device_id", "kwh", "voltage", "current", "temperature", "status"]
+        import_time:
+          type: string
+          example: "357.71462ms"
 
     # Database Models
     Datasource:
@@ -1253,6 +1351,8 @@ tags:
     description: Datasource management
   - name: Learn & Schema
     description: Database learning and schema introspection
+  - name: Data Import
+    description: CSV data import and processing
   - name: Scope & IR
     description: Scope management and Intermediate Representation
   - name: SQL Generation

@@ -25,6 +25,10 @@ analytics_sources:        # list of external, READ-ONLY engines
     kind: "mysql"
     dsn: "user:pass@tcp(localhost:3306)/ops"
     display_name: "Ops MySQL"
+  - id: "sqlite-dev"
+    kind: "sqlite"
+    dsn: "file:data/analytics.db?_fk=1"
+    display_name: "SQLite Analytics (Dev)"
 
 models:
   chat_primary: "openai"        # openai | llama3

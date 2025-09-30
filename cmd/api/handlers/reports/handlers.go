@@ -1,6 +1,7 @@
 package reports
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -139,6 +140,39 @@ func GetReport(service *services.ReportsService) gin.HandlerFunc {
 	}
 }
 
+// ListReports lists all reports
+func ListReports(service *services.ReportsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		reports, err := service.ListReports()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+				Error:   "Failed to list reports",
+				Details: err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"reports": reports})
+	}
+}
+
+// GetReportByID retrieves a report by numeric ID
+func GetReportByID(service *services.ReportsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid report ID"})
+			return
+		}
+		report, err := service.GetReportByID(uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, store.ErrorResponse{Error: "Report not found"})
+			return
+		}
+		c.JSON(http.StatusOK, report)
+	}
+}
+
 // CreateReportVersion creates a new report version
 func CreateReportVersion(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -162,6 +196,34 @@ func CreateReportVersion(service *services.ReportsService) gin.HandlerFunc {
 			return
 		}
 
+		c.JSON(http.StatusCreated, version)
+	}
+}
+
+// CreateReportVersionByID creates a report version using report ID
+func CreateReportVersionByID(service *services.ReportsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid report ID"})
+			return
+		}
+		var req store.CreateReportVersionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid request", Details: err.Error()})
+			return
+		}
+		report, err := service.GetReportByID(uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, store.ErrorResponse{Error: "Report not found"})
+			return
+		}
+		version, err := service.CreateReportVersion(report.Key, req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{Error: "Failed to create report version", Details: err.Error()})
+			return
+		}
 		c.JSON(http.StatusCreated, version)
 	}
 }
@@ -199,6 +261,50 @@ func RunReport(service *services.ReportsService) gin.HandlerFunc {
 	}
 }
 
+// ExecuteReportByID runs a report by ID
+func ExecuteReportByID(service *services.ReportsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid report ID"})
+			return
+		}
+		datasourceID := c.Query("datasource_id")
+		var req store.RunReportRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid request", Details: err.Error()})
+			return
+		}
+		if datasourceID != "" {
+			req.DatasourceID = &datasourceID
+		}
+		run, err := service.RunReportByID(uint(id), req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{Error: "Failed to execute report", Details: err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, run)
+	}
+}
+
+// DeleteReportByID deletes a report by ID
+func DeleteReportByID(service *services.ReportsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid report ID"})
+			return
+		}
+		if err := service.DeleteReportByID(uint(id)); err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{Error: "Failed to delete report", Details: err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, store.SuccessResponse{Message: "Report deleted successfully"})
+	}
+}
+
 // ExportReport exports a report
 func ExportReport(service *services.ReportsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -216,5 +322,53 @@ func ExportReport(service *services.ReportsService) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, export)
+	}
+}
+
+// GetReportData retrieves the latest execution data for a report
+func GetReportData(service *services.ReportsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{Error: "Invalid report ID"})
+			return
+		}
+
+		// Get the latest report run for this report
+		run, err := service.GetLatestReportRun(uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, store.ErrorResponse{
+				Error:   "Report data not found",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// Parse the results JSON
+		var results []map[string]interface{}
+		if run.Results != "" {
+			if err := json.Unmarshal([]byte(run.Results), &results); err != nil {
+				c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+					Error:   "Failed to parse report data",
+					Details: err.Error(),
+				})
+				return
+			}
+		}
+
+		// Return the data in a clean format
+		response := map[string]interface{}{
+			"report_id":    run.ReportID,
+			"run_id":       run.ID,
+			"status":       run.Status,
+			"row_count":    run.RowCount,
+			"data":         results,
+			"executed_at":  run.StartedAt,
+			"completed_at": run.FinishedAt,
+			"sql":          run.SQLText,
+		}
+
+		c.JSON(http.StatusOK, response)
 	}
 }
