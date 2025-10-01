@@ -1,7 +1,10 @@
 package upload
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -271,6 +274,246 @@ func DeleteUploadedFile() gin.HandlerFunc {
 			"message": fmt.Sprintf("File %s deleted successfully", fileID),
 		})
 	}
+}
+
+// LearnFileSchemaResponse represents the response from learning file schema
+type LearnFileSchemaResponse struct {
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+	SchemaData struct {
+		Columns    []ColumnInfo             `json:"columns"`
+		SampleData []map[string]interface{} `json:"sample_data"`
+		FileInfo   FileInfo                 `json:"file_info"`
+	} `json:"schema_data"`
+}
+
+type ColumnInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Nullable    bool   `json:"nullable"`
+}
+
+type FileInfo struct {
+	Filename    string `json:"filename"`
+	FileSize    int64  `json:"file_size"`
+	FileType    string `json:"file_type"`
+	RowCount    int    `json:"row_count"`
+	ColumnCount int    `json:"column_count"`
+}
+
+// LearnFileSchema analyzes a file and returns schema information
+func LearnFileSchema() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		fileID := c.Param("id")
+		if fileID == "" {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "File ID required",
+				Details: "No file ID provided",
+			})
+			return
+		}
+
+		filePath := filepath.Join("uploads", fileID)
+
+		// Check if file exists
+		fileInfo, err := os.Stat(filePath)
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, store.ErrorResponse{
+				Error:   "File not found",
+				Details: fmt.Sprintf("File %s does not exist", fileID),
+			})
+			return
+		}
+		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to get file info", err)
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+				Error:   "Failed to get file info",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// Analyze file based on type
+		fileExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(fileInfo.Name()), "."))
+
+		var schemaData struct {
+			Columns    []ColumnInfo             `json:"columns"`
+			SampleData []map[string]interface{} `json:"sample_data"`
+			FileInfo   FileInfo                 `json:"file_info"`
+		}
+
+		// Set basic file info
+		schemaData.FileInfo = FileInfo{
+			Filename:    fileInfo.Name(),
+			FileSize:    fileInfo.Size(),
+			FileType:    fileExt,
+			RowCount:    0, // Will be calculated
+			ColumnCount: 0, // Will be calculated
+		}
+
+		// Analyze file content
+		if fileExt == "csv" {
+			err = analyzeCSVFile(filePath, &schemaData)
+		} else if fileExt == "json" {
+			err = analyzeJSONFile(filePath, &schemaData)
+		} else {
+			// For unsupported file types, return basic info
+			schemaData.Columns = []ColumnInfo{
+				{
+					Name:        "content",
+					Type:        "text",
+					Description: "File content",
+					Nullable:    true,
+				},
+			}
+		}
+
+		if err != nil {
+			logger.LogError(logger.ServiceREST, "Failed to analyze file", err)
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+				Error:   "Failed to analyze file",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// Update row and column counts
+		schemaData.FileInfo.RowCount = len(schemaData.SampleData)
+		schemaData.FileInfo.ColumnCount = len(schemaData.Columns)
+
+		response := LearnFileSchemaResponse{
+			Status:     "success",
+			Message:    fmt.Sprintf("Schema learned successfully for %s", fileInfo.Name()),
+			SchemaData: schemaData,
+		}
+
+		logger.LogInfo(logger.ServiceREST, "File schema learned successfully", map[string]interface{}{
+			"file_id":       fileID,
+			"filename":      fileInfo.Name(),
+			"columns_count": len(schemaData.Columns),
+			"rows_count":    len(schemaData.SampleData),
+		})
+
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+// analyzeCSVFile analyzes a CSV file and extracts schema information
+func analyzeCSVFile(filePath string, schemaData *struct {
+	Columns    []ColumnInfo             `json:"columns"`
+	SampleData []map[string]interface{} `json:"sample_data"`
+	FileInfo   FileInfo                 `json:"file_info"`
+}) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+
+	// Read header
+	headers, err := reader.Read()
+	if err != nil {
+		return err
+	}
+
+	// Initialize columns
+	schemaData.Columns = make([]ColumnInfo, len(headers))
+	for i, header := range headers {
+		schemaData.Columns[i] = ColumnInfo{
+			Name:        strings.TrimSpace(header),
+			Type:        "string", // Default type
+			Description: fmt.Sprintf("Column %d: %s", i+1, strings.TrimSpace(header)),
+			Nullable:    true,
+		}
+	}
+
+	// Read sample data (first 5 rows)
+	schemaData.SampleData = make([]map[string]interface{}, 0, 5)
+	for i := 0; i < 5; i++ {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		row := make(map[string]interface{})
+		for j, value := range record {
+			if j < len(headers) {
+				row[headers[j]] = strings.TrimSpace(value)
+			}
+		}
+		schemaData.SampleData = append(schemaData.SampleData, row)
+	}
+
+	return nil
+}
+
+// analyzeJSONFile analyzes a JSON file and extracts schema information
+func analyzeJSONFile(filePath string, schemaData *struct {
+	Columns    []ColumnInfo             `json:"columns"`
+	SampleData []map[string]interface{} `json:"sample_data"`
+	FileInfo   FileInfo                 `json:"file_info"`
+}) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Read file content
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return err
+	}
+
+	var data interface{}
+	if err := json.Unmarshal(content, &data); err != nil {
+		return err
+	}
+
+	// Handle different JSON structures
+	switch v := data.(type) {
+	case []interface{}:
+		// Array of objects
+		if len(v) > 0 {
+			if obj, ok := v[0].(map[string]interface{}); ok {
+				// Extract columns from first object
+				for key := range obj {
+					schemaData.Columns = append(schemaData.Columns, ColumnInfo{
+						Name:        key,
+						Type:        "string", // Default type
+						Description: fmt.Sprintf("Field: %s", key),
+						Nullable:    true,
+					})
+				}
+
+				// Add sample data (first 5 items)
+				for i := 0; i < len(v) && i < 5; i++ {
+					if obj, ok := v[i].(map[string]interface{}); ok {
+						schemaData.SampleData = append(schemaData.SampleData, obj)
+					}
+				}
+			}
+		}
+	case map[string]interface{}:
+		// Single object
+		for key := range v {
+			schemaData.Columns = append(schemaData.Columns, ColumnInfo{
+				Name:        key,
+				Type:        "string", // Default type
+				Description: fmt.Sprintf("Field: %s", key),
+				Nullable:    true,
+			})
+		}
+		schemaData.SampleData = append(schemaData.SampleData, v)
+	}
+
+	return nil
 }
 
 // Helper function to check if slice contains string

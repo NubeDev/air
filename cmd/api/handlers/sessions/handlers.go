@@ -191,3 +191,159 @@ func EndSession(db *gorm.DB) gin.HandlerFunc {
 		})
 	}
 }
+
+// SessionScopeVersion represents a scope version for a session
+type SessionScopeVersion struct {
+	ID        uint   `json:"id"`
+	SessionID uint   `json:"session_id"`
+	ScopeText string `json:"scope_text"`
+	Version   int    `json:"version"`
+	IsCurrent bool   `json:"is_current"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// GetSessionScopeVersions gets all scope versions for a session
+func GetSessionScopeVersions(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionIDStr := c.Param("id")
+		sessionID, err := strconv.ParseUint(sessionIDStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid session ID",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// For now, return empty array - in a real implementation, this would query a scope_versions table
+		// Since we don't have a scope_versions table yet, we'll return an empty array
+		versions := []SessionScopeVersion{}
+
+		logger.LogInfo(logger.ServiceREST, "Getting session scope versions", map[string]interface{}{
+			"session_id": sessionID,
+		})
+
+		c.JSON(http.StatusOK, gin.H{
+			"versions": versions,
+		})
+	}
+}
+
+// CreateSessionScopeVersion creates a new scope version for a session
+func CreateSessionScopeVersion(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionIDStr := c.Param("id")
+		sessionID, err := strconv.ParseUint(sessionIDStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid session ID",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		var req struct {
+			ScopeText string `json:"scope_text" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid request",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// For now, return a mock response - in a real implementation, this would save to a scope_versions table
+		version := SessionScopeVersion{
+			ID:        1,
+			SessionID: uint(sessionID),
+			ScopeText: req.ScopeText,
+			Version:   1,
+			IsCurrent: true,
+			CreatedAt: "2025-01-01T00:00:00Z",
+			UpdatedAt: "2025-01-01T00:00:00Z",
+		}
+
+		logger.LogInfo(logger.ServiceREST, "Session scope version created", map[string]interface{}{
+			"session_id": sessionID,
+			"scope_text": req.ScopeText,
+		})
+
+		c.JSON(http.StatusCreated, version)
+	}
+}
+
+// GetCurrentSessionScope gets the current scope for a session
+func GetCurrentSessionScope(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionIDStr := c.Param("id")
+		sessionID, err := strconv.ParseUint(sessionIDStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid session ID",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// For now, return a mock response
+		scope := SessionScopeVersion{
+			ID:        1,
+			SessionID: uint(sessionID),
+			ScopeText: "Show me the hourly energy consumption growth and highlight peak usage times",
+			Version:   1,
+			IsCurrent: true,
+			CreatedAt: "2025-01-01T00:00:00Z",
+			UpdatedAt: "2025-01-01T00:00:00Z",
+		}
+
+		c.JSON(http.StatusOK, scope)
+	}
+}
+
+// UpdateCurrentSessionScope updates the current scope for a session
+func UpdateCurrentSessionScope(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionIDStr := c.Param("id")
+		sessionID, err := strconv.ParseUint(sessionIDStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid session ID",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		var req struct {
+			ScopeText string `json:"scope_text" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid request",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// For now, return a mock response
+		scope := SessionScopeVersion{
+			ID:        1,
+			SessionID: uint(sessionID),
+			ScopeText: req.ScopeText,
+			Version:   1,
+			IsCurrent: true,
+			CreatedAt: "2025-01-01T00:00:00Z",
+			UpdatedAt: "2025-01-01T00:00:00Z",
+		}
+
+		logger.LogInfo(logger.ServiceREST, "Session scope updated", map[string]interface{}{
+			"session_id": sessionID,
+			"scope_text": req.ScopeText,
+		})
+
+		c.JSON(http.StatusOK, scope)
+	}
+}

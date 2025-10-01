@@ -13,5 +13,6 @@ func SetupUploadRoutes(rg *gin.RouterGroup) {
 		uploadGroup.GET("/files", upload.ListUploadedFiles())
 		uploadGroup.GET("/file/:id", upload.GetUploadedFile())
 		uploadGroup.DELETE("/file/:id", upload.DeleteUploadedFile())
+		uploadGroup.POST("/file/:id/learn", upload.LearnFileSchema())
 	}
 }

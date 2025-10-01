@@ -16,5 +16,11 @@ func SetupSessionRoutes(rg *gin.RouterGroup, db *gorm.DB, authMiddleware gin.Han
 		sessionGroup.GET("/:id", sessions.GetSession(db))
 		sessionGroup.GET("/:id/status", sessions.GetSessionStatus(db))
 		sessionGroup.DELETE("/:id", sessions.EndSession(db))
+
+		// Scope management for sessions
+		sessionGroup.GET("/:id/scope/versions", sessions.GetSessionScopeVersions(db))
+		sessionGroup.POST("/:id/scope/versions", sessions.CreateSessionScopeVersion(db))
+		sessionGroup.GET("/:id/scope/current", sessions.GetCurrentSessionScope(db))
+		sessionGroup.POST("/:id/scope/current", sessions.UpdateCurrentSessionScope(db))
 	}
 }

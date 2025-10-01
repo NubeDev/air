@@ -5,7 +5,7 @@ import { ChatWindow } from '@/components/chat/ChatWindowNew';
 export function ChatPage() {
   return (
     <MainLayout>
-      <div className="h-full">
+      <div className="min-h-full">
         <ChatWindow />
       </div>
     </MainLayout>

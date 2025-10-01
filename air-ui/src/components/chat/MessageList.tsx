@@ -14,7 +14,7 @@ interface MessageListProps {
 
 export function MessageList({ messages, isTyping, typingMessage, scrollAreaRef, onScroll, footer, onCancelTyping }: MessageListProps) {
   return (
-    <div className="h-full overflow-y-auto" ref={scrollAreaRef} onScroll={onScroll}>
+    <div className="min-h-full overflow-y-auto" ref={scrollAreaRef} onScroll={onScroll}>
       <div className="max-w-4xl mx-auto px-4 py-6">
         <div className="space-y-6">
           {messages.map((message) => (

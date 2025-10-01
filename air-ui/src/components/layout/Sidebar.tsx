@@ -1,4 +1,4 @@
-import { } from 'react';
+import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { 
@@ -8,7 +8,9 @@ import {
   HelpCircle, 
   Plus,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Workflow,
+  FileText
 } from 'lucide-react';
 import nubeLogo from '@/assets/nube-logo.png';
 
@@ -20,8 +22,9 @@ interface SidebarProps {
 export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const menuItems = [
     { icon: MessageSquare, label: 'AI Chat', href: '/chat' },
+    { icon: Workflow, label: 'Workflow', href: '/workflow' },
+    { icon: FileText, label: 'Files', href: '/files' },
     { icon: BarChart3, label: 'Reports', href: '/reports' },
-    { icon: BarChart3, label: 'Files', href: '/files' },
     { icon: Settings, label: 'Settings', href: '/settings' },
     { icon: HelpCircle, label: 'Help', href: '/help' },
   ];
@@ -65,14 +68,16 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.label}>
-              <a
-                variant="ghost"
-                className="w-full justify-start inline-flex items-center text-left px-3 py-2 rounded-md hover:bg-accent"
-                href={item.href}
+              <NavLink
+                to={item.href}
+                className={({ isActive }) => cn(
+                  "flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-muted hover:text-foreground",
+                  isActive ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                )}
               >
                 <item.icon className="h-4 w-4 mr-2" />
                 {!isCollapsed && item.label}
-              </a>
+              </NavLink>
             </li>
           ))}
         </ul>

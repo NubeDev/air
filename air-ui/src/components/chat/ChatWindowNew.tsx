@@ -759,7 +759,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
   }, [selectedModel]);
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="min-h-full flex flex-col bg-gray-50">
       {/* Header - minimal controls only */}
       <ChatHeader
         selectedModel={selectedModel}
@@ -774,7 +774,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       <div className="flex-1 overflow-hidden">
         <FloatingDot visible={backendPending} text={wsConnected ? 'Waiting on backend…' : 'Disconnected'} status={wsConnected ? 'waiting' : 'error'} />
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center px-6">
+          <div className="min-h-full flex flex-col items-center justify-center px-6">
             <div className="max-w-3xl w-full">
               {/* Welcome Section */}
               <div className="text-center mb-12">
@@ -811,7 +811,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
             </div>
           </div>
         ) : (
-          <div className="h-full">
+          <div className="min-h-full">
             {ephemeralCard && (
               <div className="max-w-4xl mx-auto px-4 pt-4">
                 <EphemeralSystemCard

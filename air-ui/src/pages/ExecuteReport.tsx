@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { SchemaForm } from '@/components/forms/SchemaForm';
 import { Card, CardContent } from '@/components/ui/card';
 import { reportsApi } from '@/services/reportsApi';
@@ -40,27 +39,25 @@ export function ExecuteReportPage() {
   };
 
   return (
-    <MainLayout>
-      <div className="p-6">
-        {report && schema ? (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-2xl font-semibold">{report.title}</h2>
-              {report.description && (
-                <p className="text-muted-foreground">{report.description}</p>
-              )}
-            </div>
-            <SchemaForm schema={schema.schema} onSubmit={handleExecute} isLoading={isLoading} />
+    <div className="min-h-full bg-white p-6 space-y-6">
+      {report && schema ? (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-foreground">{report.title}</h2>
+            {report.description && (
+              <p className="text-muted-foreground">{report.description}</p>
+            )}
           </div>
-        ) : (
-          <Card>
-            <CardContent className="flex items-center justify-center h-32">
-              <p className="text-muted-foreground">Loading report…</p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </MainLayout>
+          <SchemaForm schema={schema.schema} onSubmit={handleExecute} isLoading={isLoading} />
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="flex items-center justify-center h-32">
+            <p className="text-muted-foreground">Loading report details or report not found...</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
