@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ChatInput } from './ChatInput';
 import { type AIModel } from './ModelSelector';
 import { Button } from '@/components/ui/button';
-import { Database, X, FileText, Upload, ChevronDown, Copy } from 'lucide-react';
+import { X, Upload, ChevronDown, Copy } from 'lucide-react';
 import { EphemeralSystemCard } from './EphemeralSystemCard';
 import { FloatingDot } from './FloatingDot';
 import { ChatHeader } from './ChatHeader';
@@ -11,7 +11,7 @@ import { AnalyzeQuickAction } from './AnalyzeQuickAction';
 import { chatApi } from '@/services/chatApi';
 import { wsService } from '@/services/websocket';
 import type { ChatMessage } from '@/types/api';
-import nubeLogo from '@/assets/nube-logo.png';
+// removed inline logo for cleaner header
 
 interface ChatWindowProps {
   reportId?: string;
@@ -24,7 +24,6 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string } | undefined>>({} as Record<AIModel, { connected: boolean; error?: string } | undefined>);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'upload' | 'existing'>('upload');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -553,20 +552,6 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
     }
   };
 
-  const handleFileSelect = (fileId: string) => {
-    setSelectedFile(fileId);
-    const file = uploadedFiles.find(f => f.file_id === fileId);
-    if (file) {
-      const successMessage: ChatMessage = {
-        id: `load_${Date.now()}`,
-        role: 'assistant',
-        content: `✅ Loaded dataset: ${file.filename}`,
-        timestamp: new Date().toISOString(),
-        report_id: reportId,
-      };
-      setMessages(prev => [...prev, successMessage]);
-    }
-  };
 
   // Handle file selection from ephemeral card
   const handleEphemeralFileSelect = (fileId: string) => {
@@ -595,6 +580,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
 
   // Handle ephemeral card dismiss
   const handleEphemeralDismiss = () => {
+    addDebugMessage('user_cancelled_file_prompt', { timestamp: new Date().toISOString() });
     setEphemeralCard(null);
   };
 
@@ -633,6 +619,12 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       };
       
       setMessages(prev => [...prev, resultMessage]);
+      
+      // Clear loading states
+      setIsLoading(false);
+      setIsTyping(false);
+      setTypingMessage('');
+      setBackendPending(false);
     });
 
     wsService.onMessage('file_analysis_error', (message) => {
@@ -648,6 +640,12 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
         },
       };
       setMessages(prev => [...prev, errorMessage]);
+      
+      // Clear loading states
+      setIsLoading(false);
+      setIsTyping(false);
+      setTypingMessage('');
+      setBackendPending(false);
     });
 
     // Handle load dataset success
@@ -762,124 +760,54 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
-      {/* Header - Clean and minimal */}
-      <div className="flex-shrink-0 border-b bg-white px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <img src={nubeLogo} alt="Nube iO" className="h-8 w-8 object-contain" />
-            <h1 className="text-lg font-semibold text-gray-900">AIR Assistant</h1>
-          </div>
-          
-          <ChatHeader
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
-            modelStatus={modelStatus}
-            wsConnected={wsConnected}
-            rawAIMode={rawAIMode}
-            onToggleRawMode={setRawAIMode}
-            showDebug={showDebug}
-            onToggleDebug={() => setShowDebug(!showDebug)}
-          />
-        </div>
-      </div>
+      {/* Header - minimal controls only */}
+      <ChatHeader
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
+        modelStatus={modelStatus}
+        rawAIMode={rawAIMode}
+        onToggleRawMode={setRawAIMode}
+        onToggleDebug={() => setShowDebug(!showDebug)}
+      />
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         <FloatingDot visible={backendPending} text={wsConnected ? 'Waiting on backend…' : 'Disconnected'} status={wsConnected ? 'waiting' : 'error'} />
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center px-4">
-            <div className="max-w-2xl w-full text-center">
-              <div className="mb-8">
-                <img src={nubeLogo} alt="Nube iO" className="h-16 w-16 object-contain mx-auto mb-4" />
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to AIR Assistant</h2>
-                <p className="text-gray-600 mb-8">Your AI-powered data analysis companion. Upload a file or start chatting to begin.</p>
+          <div className="h-full flex flex-col items-center justify-center px-6">
+            <div className="max-w-3xl w-full">
+              {/* Welcome Section */}
+              <div className="text-center mb-12">
+                <h1 className="text-3xl font-bold text-gray-900 mb-4">Welcome to AIR Assistant</h1>
+                <p className="text-lg text-gray-600 mb-8">Your AI-powered data analysis companion. Upload a file or start chatting to begin.</p>
               </div>
               
-              {/* Quick Actions */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                <Button
-                  onClick={() => setActiveTab('upload')}
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2 hover:bg-blue-50 hover:border-blue-300"
-                >
-                  <Upload className="h-6 w-6" />
-                  <span className="font-medium">Upload New File</span>
-                  <span className="text-sm text-gray-500">CSV, JSON, or other data files</span>
-                </Button>
-                
-                <Button
-                  onClick={() => setActiveTab('existing')}
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2 hover:bg-blue-50 hover:border-blue-300"
-                >
-                  <Database className="h-6 w-6" />
-                  <span className="font-medium">Load Existing Dataset</span>
-                  <span className="text-sm text-gray-500">{uploadedFiles.length} files available</span>
-                </Button>
+              {/* Upload Action */}
+              <div className="max-w-sm mx-auto mb-8">
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".csv,.json,.xlsx,.txt"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        handleFileUpload(e.target.files[0]);
+                      }
+                    }}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className="h-24 flex flex-col items-center justify-center space-y-3 hover:bg-primary/5 hover:border-primary transition-all duration-200 border-2 border-dashed border-muted rounded-xl cursor-pointer bg-white"
+                  >
+                    <Upload className="h-8 w-8 text-primary" />
+                    <div className="text-center">
+                      <div className="font-semibold text-gray-900">Upload New File</div>
+                      <div className="text-sm text-gray-500">CSV, JSON, or other data files</div>
+                    </div>
+                  </label>
+                </div>
               </div>
-              
-              {/* File Upload Area */}
-              {activeTab === 'upload' && (
-                <div className="bg-white rounded-lg border-2 border-dashed border-gray-300 p-8">
-                  <div className="text-center">
-                    <Upload className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                    <h3 className="text-lg font-semibold mb-2">Upload a file</h3>
-                    <p className="text-gray-500 mb-4">Choose a file to upload and analyze</p>
-                    <input
-                      type="file"
-                      accept=".csv,.json,.xlsx,.txt"
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) {
-                          handleFileUpload(e.target.files[0]);
-                        }
-                      }}
-                      className="hidden"
-                      id="file-upload"
-                    />
-                    <label
-                      htmlFor="file-upload"
-                      className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
-                    >
-                      Choose File
-                    </label>
-                  </div>
-                </div>
-              )}
-              
-              {/* Existing Files */}
-              {activeTab === 'existing' && uploadedFiles.length > 0 && (
-                <div className="bg-white rounded-lg border p-6">
-                  <h3 className="text-lg font-semibold mb-4">Available Datasets</h3>
-                  <div className="space-y-2">
-                    {uploadedFiles.map((file) => (
-                      <Button
-                        key={file.file_id}
-                        variant="ghost"
-                        onClick={() => handleFileSelect(file.file_id)}
-                        className="w-full justify-start h-auto p-4 hover:bg-blue-50"
-                      >
-                        <FileText className="h-5 w-5 mr-3 text-blue-600" />
-                        <div className="text-left">
-                          <div className="font-medium">{file.filename}</div>
-                          <div className="text-sm text-gray-500">{file.file_type} • {Math.round(file.file_size / 1024)}KB</div>
-                        </div>
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {activeTab === 'existing' && uploadedFiles.length === 0 && (
-                <div className="bg-white rounded-lg border p-8 text-center">
-                  <Database className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-lg font-semibold mb-2">No datasets available</h3>
-                  <p className="text-gray-500 mb-4">Upload a file to get started with data analysis.</p>
-                  <Button onClick={() => setActiveTab('upload')}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload File
-                  </Button>
-                </div>
-              )}
             </div>
           </div>
         ) : (
@@ -903,6 +831,12 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
               typingMessage={typingMessage}
               scrollAreaRef={scrollAreaRef}
               onScroll={handleScroll}
+              onCancelTyping={() => {
+                setIsTyping(false);
+                setTypingMessage('');
+                setBackendPending(false);
+                addDebugMessage('user_cancelled', { timestamp: new Date().toISOString() });
+              }}
               footer={selectedFile && !isTyping ? (
                 <div className="flex justify-start">
                   <AnalyzeQuickAction
@@ -977,14 +911,14 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       )}
       
       {/* Input - ChatGPT style */}
-      <div className="flex-shrink-0 border-t bg-white px-4 py-4 sticky bottom-0 z-50">
+      <div className="flex-shrink-0 border-t border-gray-200 bg-white px-6 py-6 sticky bottom-0 z-50">
         <div className="max-w-4xl mx-auto">
           <div className="relative">
             {/* Toast */}
             {toast && (
               <div
-                className={`absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-2 rounded text-sm shadow ${
-                  toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                className={`absolute -top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-sm shadow-lg z-10 ${
+                  toast.type === 'success' ? 'bg-primary text-primary-foreground' : 'bg-destructive text-destructive-foreground'
                 }`}
                 onAnimationEnd={() => setToast(null)}
               >
@@ -1011,10 +945,10 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
             
             {/* Loading overlay */}
             {isLoading && (
-              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-2xl">
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-sm text-gray-600">Sending...</span>
+              <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center rounded-2xl backdrop-blur-sm">
+                <div className="flex items-center space-x-3">
+                  <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-sm font-medium text-gray-700">Sending...</span>
                 </div>
               </div>
             )}

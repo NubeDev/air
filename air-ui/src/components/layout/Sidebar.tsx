@@ -19,8 +19,9 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const menuItems = [
+    { icon: MessageSquare, label: 'AI Chat', href: '/chat' },
     { icon: BarChart3, label: 'Reports', href: '/reports' },
-    { icon: MessageSquare, label: 'Chat', href: '/chat' },
+    { icon: BarChart3, label: 'Files', href: '/files' },
     { icon: Settings, label: 'Settings', href: '/settings' },
     { icon: HelpCircle, label: 'Help', href: '/help' },
   ];
@@ -37,7 +38,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
             <img 
               src={nubeLogo} 
               alt="Nube Logo" 
-              className="h-20 w-20 object-contain rounded-lg"
+              className="h-24 w-24 object-contain rounded-lg"
             />
           </div>
           <Button
@@ -64,14 +65,14 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.label}>
-              <Button
+              <a
                 variant="ghost"
-                className="w-full justify-start"
-                size="sm"
+                className="w-full justify-start inline-flex items-center text-left px-3 py-2 rounded-md hover:bg-accent"
+                href={item.href}
               >
                 <item.icon className="h-4 w-4 mr-2" />
                 {!isCollapsed && item.label}
-              </Button>
+              </a>
             </li>
           ))}
         </ul>

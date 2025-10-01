@@ -27,13 +27,13 @@ logs-backend:
 	@ps aux | grep "go run ./cmd/api" | grep -v grep | head -1 | awk '{print $$2}' | xargs -I {} tail -f /proc/{}/fd/1 2>/dev/null || echo "Go backend server not running. Start with 'make dev-backend'"
 
 dev-ui:
-	@echo "Killing existing processes on port 3000..."
+	@echo "Killing existing processes on port 9002..."
 	@-pkill -f "vite" 2>/dev/null || true
-	@-fuser -k 3000/tcp 2>/dev/null || true
+	@-fuser -k 9002/tcp 2>/dev/null || true
 	@-fuser -k 3001/tcp 2>/dev/null || true
 	@sleep 1
-	@echo "Starting AIR UI..."
-	cd air-ui && npm run dev &
+	@echo "Starting AIR UI on port 9002..."
+	cd air-ui && npm run dev -- --port 9002 &
 	@echo "UI server started in background. Use 'make logs-ui' to view logs."
 
 dev-data:
@@ -131,7 +131,7 @@ clean-ports:
 	@-pkill -f "vite" 2>/dev/null || true
 	@-fuser -k 9000/tcp 2>/dev/null || true
 	@-fuser -k 9001/tcp 2>/dev/null || true
-	@-fuser -k 3000/tcp 2>/dev/null || true
+	@-fuser -k 9002/tcp 2>/dev/null || true
 	@-fuser -k 3001/tcp 2>/dev/null || true
 	@echo "All AIR processes stopped"
 
@@ -217,7 +217,7 @@ help:
 	@echo ""
 	@echo "Health Checks:"
 	@echo "  curl http://localhost:9000/v1/reports  # Go backend"
-	@echo "  curl http://localhost:3000             # UI"
+	@echo "  curl http://localhost:9002             # UI"
 	@echo "  curl http://localhost:9001/v1/py/health # FastAPI"
 	@echo ""
 	@echo "For detailed guide, see SPEC-RUNNING.md"

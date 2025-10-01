@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { reportsApi } from '@/services/reportsApi';
 import type { Report, ReportSchema } from '@/types/api';
 
+// Deprecated: legacy tabbed dashboard retained temporarily (unused by router)
 export function Dashboard() {
   const [reports, setReports] = useState<Report[]>([]);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);

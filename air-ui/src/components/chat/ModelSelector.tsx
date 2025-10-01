@@ -1,5 +1,4 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 export type AIModel = 'llama' | 'openai' | 'sqlcoder';
@@ -43,10 +42,10 @@ export function ModelSelector({ selectedModel, onModelChange, modelStatus }: Mod
   };
 
   return (
-    <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-      <span className="text-sm font-medium">AI Model:</span>
+    <div className="flex items-center space-x-3">
+      <span className="text-sm font-medium text-gray-600">Model</span>
       <Select value={selectedModel} onValueChange={onModelChange}>
-        <SelectTrigger className="w-32">
+        <SelectTrigger className="w-36 h-9 border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -70,13 +69,7 @@ export function ModelSelector({ selectedModel, onModelChange, modelStatus }: Mod
           </SelectItem>
         </SelectContent>
       </Select>
-      
-      <Badge 
-        variant={modelStatus[selectedModel]?.connected ? "default" : "destructive"}
-        className="text-xs"
-      >
-        {getStatusText(modelStatus[selectedModel])}
-      </Badge>
+
     </div>
   );
 }

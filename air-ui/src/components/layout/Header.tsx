@@ -19,7 +19,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <h2 className="text-2xl font-semibold">Dashboard</h2>
+          {/* Intentionally no page title to keep chat header clean */}
         </div>
         
         <div className="flex items-center space-x-4">
