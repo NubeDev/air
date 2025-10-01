@@ -54,49 +54,79 @@ func NewAIService(registry *datasource.Registry, db *gorm.DB, cfg *config.Config
 func (s *AIService) GetModelDefaults() map[string]string {
 	defaults := make(map[string]string)
 
-	// Chat default
-	if s.Config.Models.ChatPrimary == "openai" && s.Config.Models.OpenAI.Model != "" && s.Config.Models.OpenAI.APIKey != "" {
-		defaults["chat"] = "openai:" + s.Config.Models.OpenAI.Model
-	} else if s.Config.Models.Ollama.Llama3Model != "" {
-		defaults["chat"] = "ollama:" + s.Config.Models.Ollama.Llama3Model
+	// Resolve by token (generic): try OpenAI keyword, otherwise search Ollama models by contains(token)
+	resolve := func(token string) string {
+		if token == "openai" && s.Config.Models.OpenAI.APIKey != "" && s.Config.Models.OpenAI.Model != "" {
+			return "openai:" + s.Config.Models.OpenAI.Model
+		}
+		// search ollama models for token in value or key
+		for k, v := range s.Config.Models.Ollama.Models {
+			if v == "" {
+				continue
+			}
+			if token == "" || containsFold(v, token) || containsFold(k, token) {
+				return "ollama:" + v
+			}
+		}
+		// fallback: any ollama model if available
+		for _, v := range s.Config.Models.Ollama.Models {
+			if v != "" {
+				return "ollama:" + v
+			}
+		}
+		// final fallback: openai model if configured
+		if s.Config.Models.OpenAI.APIKey != "" && s.Config.Models.OpenAI.Model != "" {
+			return "openai:" + s.Config.Models.OpenAI.Model
+		}
+		return ""
 	}
 
-	// SQL default
-	if s.Config.Models.SQLPrimary == "openai" && s.Config.Models.OpenAI.Model != "" && s.Config.Models.OpenAI.APIKey != "" {
-		defaults["sql"] = "openai:" + s.Config.Models.OpenAI.Model
-	} else if s.Config.Models.Ollama.SQLCoderModel != "" {
-		defaults["sql"] = "ollama:" + s.Config.Models.Ollama.SQLCoderModel
-	}
-
+	defaults["chat"] = resolve(s.Config.Models.ChatPrimary)
+	defaults["sql"] = resolve(s.Config.Models.SQLPrimary)
 	return defaults
 }
 
 // GetModels enumerates available models from current config (back-compat view)
 func (s *AIService) GetModels() []map[string]interface{} {
-	models := make([]map[string]interface{}, 0, 4)
+	models := make([]map[string]interface{}, 0, 8)
 
-	// Ollama chat model (llama3)
-	if s.Config.Models.Ollama.Llama3Model != "" {
-		models = append(models, map[string]interface{}{
-			"id":           "ollama:" + s.Config.Models.Ollama.Llama3Model,
-			"provider":     "ollama",
-			"name":         s.Config.Models.Ollama.Llama3Model,
-			"capabilities": []string{"chat"},
-		})
+	// Dynamic Ollama entries
+	if s.Config.Models.Ollama.Models != nil {
+		for key, val := range s.Config.Models.Ollama.Models {
+			if val == "" {
+				continue
+			}
+			// Capability resolution order:
+			// 1) Explicit map in config: models.ollama_models_capabilities[baseName]
+			// 2) Heuristics from key/value (sql/sqlcoder)
+			// 3) Default to chat
+			caps := []string{"chat"}
+			// normalize base name (strip tag e.g. ":7b")
+			base := val
+			if idx := strings.Index(base, ":"); idx > 0 {
+				base = base[:idx]
+			}
+			if s.Config.Models.OllamaCapabilities != nil {
+				if exp, ok := s.Config.Models.OllamaCapabilities[base]; ok && len(exp) > 0 {
+					caps = exp
+				}
+			}
+			if len(caps) == 1 && caps[0] == "chat" { // only if not set explicitly
+				if containsFold(key, "sql") || containsFold(val, "sql") || containsFold(val, "coder") {
+					caps = []string{"sql"}
+				}
+			}
+			models = append(models, map[string]interface{}{
+				"id":           "ollama:" + val,
+				"provider":     "ollama",
+				"name":         val,
+				"capabilities": caps,
+			})
+		}
 	}
 
-	// Ollama sqlcoder model
-	if s.Config.Models.Ollama.SQLCoderModel != "" {
-		models = append(models, map[string]interface{}{
-			"id":           "ollama:" + s.Config.Models.Ollama.SQLCoderModel,
-			"provider":     "ollama",
-			"name":         s.Config.Models.Ollama.SQLCoderModel,
-			"capabilities": []string{"sql"},
-		})
-	}
-
-	// OpenAI default chat model (only if API key present)
-	if s.Config.Models.OpenAI.Model != "" && s.Config.Models.OpenAI.APIKey != "" {
+	// OpenAI chat
+	if s.Config.Models.OpenAI.APIKey != "" && s.Config.Models.OpenAI.Model != "" {
 		models = append(models, map[string]interface{}{
 			"id":           "openai:" + s.Config.Models.OpenAI.Model,
 			"provider":     "openai",
@@ -106,6 +136,14 @@ func (s *AIService) GetModels() []map[string]interface{} {
 	}
 
 	return models
+}
+
+// containsFold reports whether s contains sub, case-insensitive
+func containsFold(s, sub string) bool {
+	if sub == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
 
 // SetPrimaryModel updates in-memory defaults for a capability based on a model ID
@@ -942,23 +980,35 @@ func (s *AIService) AiRaw(messages []llm.Message, modelOverride string) (*llm.Ch
 		model = llm.GetModelName(s.Config, "chat")
 	}
 
-	// Create the appropriate LLM client based on the model
+	// Normalize provider-prefixed IDs like "openai:gpt-4o-mini" or "ollama:qwen3:7b"
+	provider := ""
+	if strings.Contains(model, ":") {
+		parts := strings.SplitN(model, ":", 2)
+		if len(parts) == 2 {
+			provider = strings.ToLower(parts[0])
+			model = parts[1]
+		}
+	}
+
+	// Create the appropriate LLM client based on the provider/model
 	var client llm.LLMClient
 	var err error
 
-	// Determine which client to use based on the model name
-	if strings.HasPrefix(model, "gpt-") {
-		// OpenAI model
+	// Determine which client to use based on explicit provider if present, otherwise by model prefix
+	switch provider {
+	case "openai":
 		client, err = llm.NewOpenAIClient(s.Config.Models.OpenAI)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
-		}
-	} else {
-		// Ollama model (llama3:latest, sqlcoder:7b, etc.)
+	case "ollama":
 		client, err = llm.NewOllamaClient(s.Config.Models.Ollama)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create Ollama client: %w", err)
+	default:
+		if strings.HasPrefix(model, "gpt-") {
+			client, err = llm.NewOpenAIClient(s.Config.Models.OpenAI)
+		} else {
+			client, err = llm.NewOllamaClient(s.Config.Models.Ollama)
 		}
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	req := llm.ChatRequest{

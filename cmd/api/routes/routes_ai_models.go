@@ -39,8 +39,8 @@ func SetupAIModelRoutes(router *gin.RouterGroup, aiService *services.AIService) 
 			// Check model status dynamically
 			status := make(map[string]interface{})
 
-			// Check OpenAI
-			if aiService.Config.Models.ChatPrimary == "openai" && aiService.Config.Models.OpenAI.APIKey != "" {
+			// Check OpenAI (independent of primary selection)
+			if aiService.Config.Models.OpenAI.APIKey != "" {
 				// Try to create OpenAI client and check health
 				openaiClient, err := llm.NewOpenAIClient(aiService.Config.Models.OpenAI)
 				if err == nil {
@@ -73,16 +73,16 @@ func SetupAIModelRoutes(router *gin.RouterGroup, aiService *services.AIService) 
 			}
 
 			if err == nil {
-				status["llama"] = gin.H{"connected": true}
+				status["ollama"] = gin.H{"connected": true}
 			} else {
-				status["llama"] = gin.H{
+				status["ollama"] = gin.H{
 					"connected": false,
 					"error":     err.Error(),
 				}
 			}
 
-			// SQLCoder is typically the same as Ollama
-			status["sqlcoder"] = status["llama"]
+			// SQLCoder health mirrors Ollama provider
+			status["sqlcoder"] = status["ollama"]
 
 			c.JSON(200, gin.H{
 				"defaults": aiService.GetModelDefaults(),

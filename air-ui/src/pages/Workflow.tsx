@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 import { SessionStart } from '../components/workflow/SessionStart';
 import { SchemaViewer } from '../components/workflow/SchemaViewer';
 import { ScopeBuilder } from '../components/workflow/ScopeBuilder';
+import { chatApi } from '@/services/chatApi';
 
 type WorkflowStep = 
   | 'session_start'
@@ -32,17 +33,21 @@ interface WorkflowState {
 function QueryGenerateStep({
   scopeVersionId,
   defaultDatasourceId = 'sqlite-dev',
+  defaultSqlModelId,
+  sqlModels = [],
   onGenerated,
 }: {
   scopeVersionId?: number;
   defaultDatasourceId?: string;
+  defaultSqlModelId?: string;
+  sqlModels?: Array<{ id: string; provider: string; name: string; capabilities: string[] }>;
   onGenerated: (data: { queryData: { sql: string; datasource_id: string } }) => void;
 }) {
   const [datasourceId, setDatasourceId] = useState<string>(defaultDatasourceId);
   const [generating, setGenerating] = useState(false);
   const [sql, setSql] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [sqlModel, setSqlModel] = useState<'sqlcoder' | 'openai' | 'llama'>('sqlcoder');
+  const [sqlModel, setSqlModel] = useState<string>(defaultSqlModelId || '');
 
   const handleGenerate = async () => {
     if (!scopeVersionId) {
@@ -119,11 +124,11 @@ function QueryGenerateStep({
             <select
               className="border rounded px-3 py-2 text-sm w-full bg-white"
               value={sqlModel}
-              onChange={(e) => setSqlModel(e.target.value as any)}
+              onChange={(e) => setSqlModel(e.target.value)}
             >
-              <option value="sqlcoder">SQLCoder (Ollama)</option>
-              <option value="openai">OpenAI</option>
-              <option value="llama">Llama</option>
+              {sqlModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.provider}: {m.name}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -156,7 +161,25 @@ export function WorkflowPage() {
   const [workflowState, setWorkflowState] = useState<WorkflowState>({
     currentStep: 'session_start'
   });
-  const [chatModel, setChatModel] = useState<'openai' | 'llama' | 'sqlcoder'>('llama');
+  const [chatModel, setChatModel] = useState<string>('');
+  const [models, setModels] = useState<Array<{ id: string; provider: string; name: string; capabilities: string[] }>>([]);
+  const [defaultDatasourceId] = useState<string>('sqlite-dev');
+  const [defaultSqlModelId, setDefaultSqlModelId] = useState<string>('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await chatApi.getModelStatus();
+        const ms = res.data.models || [];
+        setModels(ms);
+        const defaults = (res.data as any).defaults || {};
+        if (!chatModel && defaults.chat) setChatModel(defaults.chat);
+        if (!defaultSqlModelId && defaults.sql) setDefaultSqlModelId(defaults.sql);
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, []);
 
   const currentStepIndex = workflowSteps.findIndex(step => step.id === workflowState.currentStep);
   const currentStep = workflowSteps[currentStepIndex];
@@ -219,7 +242,7 @@ export function WorkflowPage() {
           <ScopeBuilder 
             sessionId={workflowState.sessionId}
             schemaData={workflowState.schemaData}
-            chatModel={chatModel}
+            chatModel={chatModel as any}
             onScopeBuilt={(d) => {
               handleStepComplete(d);
               handleNextStep();
@@ -230,6 +253,9 @@ export function WorkflowPage() {
         return (
           <QueryGenerateStep
             scopeVersionId={workflowState.scopeVersionId}
+            defaultDatasourceId={defaultDatasourceId}
+            defaultSqlModelId={defaultSqlModelId}
+            sqlModels={models.filter(m => m.capabilities.includes('sql'))}
             onGenerated={(d: { queryData: { sql: string; datasource_id: string } }) => handleStepComplete(d)}
           />
         );
@@ -263,11 +289,11 @@ export function WorkflowPage() {
               <select
                 className="border rounded px-3 py-2 text-sm bg-white"
                 value={chatModel}
-                onChange={(e) => setChatModel(e.target.value as any)}
+                onChange={(e) => setChatModel(e.target.value)}
               >
-                <option value="openai">OpenAI</option>
-                <option value="llama">Llama</option>
-                <option value="sqlcoder">SQLCoder</option>
+                {models.filter(m => m.capabilities.includes('chat')).map(m => (
+                  <option key={m.id} value={m.id}>{m.provider}: {m.name}</option>
+                ))}
               </select>
             </div>
           </div>

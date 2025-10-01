@@ -58,6 +58,8 @@ type ModelsConfig struct {
 	OpenAI      OpenAIConfig     `mapstructure:"openai"`
 	Ollama      OllamaConfig     `mapstructure:"ollama"`
 	Embeddings  EmbeddingsConfig `mapstructure:"embeddings"`
+	// Optional explicit capability map for Ollama models, keyed by base name (e.g. "qwen3")
+	OllamaCapabilities map[string][]string `mapstructure:"ollama_models_capabilities"`
 }
 
 // OpenAIConfig holds OpenAI configuration
@@ -66,11 +68,10 @@ type OpenAIConfig struct {
 	APIKey string `mapstructure:"api_key"`
 }
 
-// OllamaConfig holds Ollama configuration
+// OllamaConfig holds Ollama configuration (generic)
 type OllamaConfig struct {
-	Host          string `mapstructure:"host"`
-	Llama3Model   string `mapstructure:"llama3_model"`
-	SQLCoderModel string `mapstructure:"sqlcoder_model"`
+	Host   string            `mapstructure:"host"`
+	Models map[string]string `mapstructure:"models"`
 }
 
 // EmbeddingsConfig holds embeddings configuration
@@ -150,8 +151,6 @@ func Load(configPath string) (*Config, error) {
 	viper.SetDefault("models.sql_primary", "sqlcoder")
 	viper.SetDefault("models.openai.model", "gpt-4o-mini")
 	viper.SetDefault("models.ollama.host", "http://localhost:11434")
-	viper.SetDefault("models.ollama.llama3_model", "llama3")
-	viper.SetDefault("models.ollama.sqlcoder_model", "sqlcoder")
 	viper.SetDefault("models.embeddings.provider", "openai")
 	viper.SetDefault("models.embeddings.model", "text-embedding-3-small")
 	viper.SetDefault("safety.default_row_limit", 5000)
@@ -205,6 +204,22 @@ func Load(configPath string) (*Config, error) {
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Generic model map synthesis for Ollama
+	if config.Models.Ollama.Models == nil {
+		config.Models.Ollama.Models = make(map[string]string)
+	}
+	// Merge any string entries found under models.ollama (except host)
+	if raw := viper.GetStringMap("models.ollama"); len(raw) > 0 {
+		for k, v := range raw {
+			if k == "host" { // skip
+				continue
+			}
+			if s, ok := v.(string); ok && s != "" {
+				config.Models.Ollama.Models[k] = s
+			}
+		}
 	}
 
 	// Validate configuration

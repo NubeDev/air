@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChatInput } from './ChatInput';
-import { type AIModel } from './ModelSelector';
+import { type AIModel, type ModelInfo } from './ModelSelector';
 import { Button } from '@/components/ui/button';
 import { X, Upload, ChevronDown, Copy } from 'lucide-react';
 import { EphemeralSystemCard } from './EphemeralSystemCard';
@@ -20,8 +20,9 @@ interface ChatWindowProps {
 export function ChatWindow({ reportId }: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<AIModel>('llama');
-  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string } | undefined>>({} as Record<AIModel, { connected: boolean; error?: string } | undefined>);
+  const [selectedModel, setSelectedModel] = useState<AIModel>('');
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelHealth, setModelHealth] = useState<Record<string, { connected: boolean; error?: string }>>({});
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -42,8 +43,8 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   } | null>(null);
 
   useEffect(() => {
-    // Load model status and uploaded files
-    loadModelStatus();
+    // Load models and defaults
+    loadModels();
     loadUploadedFiles();
     
     // Initialize WebSocket connection
@@ -95,12 +96,20 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
     }
   };
 
-  const loadModelStatus = async () => {
+  const loadModels = async () => {
     try {
-      const response = await chatApi.getModelStatus();
-      setModelStatus(response.data);
+      const [listRes, statusRes] = await Promise.all([
+        chatApi.getModels(),
+        chatApi.getModelStatus(),
+      ]);
+      const defaults = listRes.data.defaults || {};
+      const chatDefault = defaults.chat as string | undefined;
+      setModels(listRes.data.models || []);
+      setModelHealth(statusRes.data.health || {});
+      if (chatDefault) setSelectedModel(chatDefault);
+      else if ((listRes.data.models || []).length > 0) setSelectedModel(listRes.data.models[0].id);
     } catch (error) {
-      console.error('Failed to load model status:', error);
+      console.error('Failed to load models:', error);
     }
   };
 
@@ -764,7 +773,8 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       <ChatHeader
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
-        modelStatus={modelStatus}
+        models={models.filter(m => m.capabilities.includes('chat'))}
+        health={modelHealth}
         rawAIMode={rawAIMode}
         onToggleRawMode={setRawAIMode}
         onToggleDebug={() => setShowDebug(!showDebug)}
@@ -931,15 +941,13 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
               onRemoveFile={handleRemoveFile}
               onAtCommand={handleAtCommand}
               attachedFiles={attachedFiles}
-              disabled={isLoading || (modelStatus[selectedModel] && !modelStatus[selectedModel].connected) || !wsConnected}
+              disabled={isLoading || !wsConnected || !selectedModel}
               placeholder={
                 !wsConnected
                   ? 'Connecting to server...'
-                  : modelStatus[selectedModel] && !modelStatus[selectedModel].connected 
-                    ? `Cannot send message - ${modelStatus[selectedModel].error || 'No connection'}`
-                    : selectedFile 
-                      ? `Ask me about ${uploadedFiles.find(f => f.file_id === selectedFile)?.filename || 'your dataset'}...`
-                      : 'Type @files to see available files, @db for databases, or @load-file/filename to load a file...'
+                  : selectedFile 
+                    ? `Ask me about ${uploadedFiles.find(f => f.file_id === selectedFile)?.filename || 'your dataset'}...`
+                    : 'Type @files to see available files, @db for databases, or @load-file/filename to load a file...'
               }
             />
             

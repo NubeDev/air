@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Bug, ChevronDown, Settings, Zap, CheckCircle } from 'lucide-react';
-import { type AIModel } from './ModelSelector';
+import { type AIModel, type ModelInfo } from './ModelSelector';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,17 +8,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-
-interface ModelStatus {
-  connected: boolean;
-  error?: string;
-}
+} from '../ui/dropdown-menu';
 
 interface ChatHeaderProps {
   selectedModel: AIModel;
   onModelChange: (model: AIModel) => void;
-  modelStatus: Record<AIModel, ModelStatus | undefined>;
+  models?: ModelInfo[];
+  health?: Record<string, { connected: boolean; error?: string }>;
   rawAIMode?: boolean;
   onToggleRawMode?: (value: boolean) => void;
   onToggleDebug?: () => void;
@@ -27,13 +23,14 @@ interface ChatHeaderProps {
 export function ChatHeader({
   selectedModel,
   onModelChange,
-  modelStatus,
+  models = [],
+  health = {},
   rawAIMode = false,
   onToggleRawMode,
   onToggleDebug,
 }: ChatHeaderProps) {
-  const currentStatus = modelStatus[selectedModel];
-  const isConnected = currentStatus?.connected ?? false;
+  const currentProvider = (selectedModel || '').split(':')[0] || 'ollama';
+  const isConnected = health[currentProvider]?.connected ?? false;
 
   return (
     <div className="flex-shrink-0 bg-white border-b border-gray-100">
@@ -63,24 +60,22 @@ export function ChatHeader({
               <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
                 Model Selection
               </DropdownMenuLabel>
-              {(['openai', 'llama', 'sqlcoder'] as AIModel[]).map((model) => {
-                const status = modelStatus[model];
-                return (
-                  <DropdownMenuItem
-                    key={model}
-                    onClick={() => onModelChange(model)}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <div className={`w-2 h-2 rounded-full ${status?.connected ? 'bg-primary' : 'bg-destructive'}`} />
-                      <span className="capitalize">{model}</span>
-                    </div>
-                    {selectedModel === model && (
-                      <CheckCircle className="h-4 w-4 text-primary" />
-                    )}
-                  </DropdownMenuItem>
-                );
-              })}
+              {models.map((m) => (
+                <DropdownMenuItem
+                  key={m.id}
+                  onClick={() => onModelChange(m.id)}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${health[m.provider]?.connected ? 'bg-primary' : 'bg-destructive'}`} />
+                    <span className="capitalize">{m.provider}</span>
+                    <span className="text-xs text-muted-foreground">{m.name}</span>
+                  </div>
+                  {selectedModel === m.id && (
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                  )}
+                </DropdownMenuItem>
+              ))}
               
               <DropdownMenuSeparator />
               

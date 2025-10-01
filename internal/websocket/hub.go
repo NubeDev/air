@@ -711,17 +711,17 @@ func (c *Client) handleRawAIMessage(message Message) {
 
 	model, _ := message.Payload["model"].(string)
 	if model == "" {
-		model = "gpt-4o-mini" // Default to the actual OpenAI model name
+		model = "gpt-4o-mini"
 	}
-
-	// Map provider names to actual model names
+	// Accept provider-prefixed IDs like "ollama:qwen3:7b" and pass through
+	// If short aliases are used, keep minimal compatibility
 	switch model {
 	case "openai":
-		model = "gpt-4o-mini"
+		model = "openai:gpt-4o-mini"
 	case "llama":
-		model = "llama3:latest"
+		model = "ollama:llama3:latest"
 	case "sqlcoder":
-		model = "sqlcoder:7b"
+		model = "ollama:sqlcoder:7b"
 	}
 
 	logger.LogInfo(logger.ServiceWS, "Processing raw AI message", map[string]interface{}{
@@ -763,7 +763,8 @@ func (c *Client) processRawAIMessage(content, model string) {
 			"content": content,
 			"model":   model,
 		})
-		response = "I'm sorry, I'm having trouble processing your request right now. Please try again."
+		// Surface the actual error so Settings > Raw Ping shows why it failed (e.g., missing model)
+		response = fmt.Sprintf("Raw AI error: %v", err)
 	}
 
 	// Stop typing indicator

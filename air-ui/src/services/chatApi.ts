@@ -1,12 +1,11 @@
 import { api } from '@/lib/api';
-import type { AIModel } from '@/components/chat/ModelSelector';
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
-  model?: AIModel;
+  model?: string;
   metadata?: {
     type?: 'data_query' | 'report_creation' | 'sql_generation' | 'analysis';
     data?: any;
@@ -16,7 +15,7 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   message: string;
-  model: AIModel;
+  model: string;
   context?: {
     datasource_id?: string;
     report_id?: string;
@@ -27,20 +26,20 @@ export interface ChatRequest {
 export interface DataQueryRequest {
   query: string;
   datasource_id: string;
-  model: AIModel;
+  model: string;
 }
 
 export interface ReportCreationRequest {
   description: string;
   datasource_id: string;
-  model: AIModel;
+  model: string;
   data_context?: any;
 }
 
 export interface FileAnalysisRequest {
   file_id: string;
   query: string;
-  model: AIModel;
+  model: string;
 }
 
 export interface UploadedFile {
@@ -69,9 +68,17 @@ export const chatApi = {
   getDatasources: () =>
     api.get<{ datasources: Array<{ id: string; name: string; type: string; connected: boolean }> }>('/v1/datasources'),
 
-  // Get model status
+  // Get models list
+  getModels: () =>
+    api.get<{ defaults: Record<string, string>; models: Array<{ id: string; provider: string; name: string; capabilities: string[] }> }>('/v1/ai/models'),
+
+  // Get model status (provider-level health)
   getModelStatus: () =>
-    api.get<Record<string, { connected: boolean; error?: string }>>('/v1/ai/models/status'),
+    api.get<{ defaults: Record<string, string>; models: Array<{ id: string; provider: string; name: string; capabilities: string[] }>; health: Record<string, { connected: boolean; error?: string }> }>('/v1/ai/models/status'),
+
+  // Set primary model for a capability (chat | sql)
+  setPrimaryModel: (capability: string, model: string) =>
+    api.post('/v1/ai/models/primary', { capability, model }),
 
   // Start a learning session for data exploration
   startLearningSession: (datasource_id: string) =>

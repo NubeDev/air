@@ -28,9 +28,18 @@ func NewLLMClient(cfg *config.Config) (LLMClient, error) {
 	}
 
 	// Fall back to Ollama
-	logger.LogInfo(logger.ServiceAI, "Using Ollama as chat model", map[string]interface{}{
-		"model": cfg.Models.Ollama.Llama3Model,
-	})
+	model := ""
+	if cfg.Models.Ollama.Models != nil {
+		// pick first available chat-like model as fallback name if present
+		for k, v := range cfg.Models.Ollama.Models {
+			if v != "" {
+				model = v
+				_ = k
+				break
+			}
+		}
+	}
+	logger.LogInfo(logger.ServiceAI, "Using Ollama as chat model", map[string]interface{}{"model": model})
 	return NewOllamaClient(cfg.Models.Ollama)
 }
 
@@ -45,7 +54,7 @@ func NewSQLClient(cfg *config.Config) (LLMClient, error) {
 	}
 	// Default to Ollama (e.g., sqlcoder)
 	logger.LogInfo(logger.ServiceAI, "Using Ollama as SQL model", map[string]interface{}{
-		"model": cfg.Models.Ollama.SQLCoderModel,
+		"model": GetModelName(cfg, "sql"),
 	})
 	return NewOllamaClient(cfg.Models.Ollama)
 }
@@ -57,18 +66,44 @@ func GetModelName(cfg *config.Config, modelType string) string {
 		if cfg.Models.ChatPrimary == "openai" && cfg.Models.OpenAI.APIKey != "" {
 			return cfg.Models.OpenAI.Model
 		}
-		return cfg.Models.Ollama.Llama3Model
+		if cfg.Models.Ollama.Models != nil {
+			for _, v := range cfg.Models.Ollama.Models {
+				if v != "" {
+					return v
+				}
+			}
+		}
+		return ""
 	case "sql":
 		if cfg.Models.SQLPrimary == "openai" && cfg.Models.OpenAI.APIKey != "" {
 			return cfg.Models.OpenAI.Model
 		}
-		return cfg.Models.Ollama.SQLCoderModel
+		if cfg.Models.Ollama.Models != nil {
+			for key, v := range cfg.Models.Ollama.Models {
+				if v != "" && (key == "sqlcoder_model" || key == "sql" || key == "sql_model") {
+					return v
+				}
+			}
+			for _, v := range cfg.Models.Ollama.Models {
+				if v != "" {
+					return v
+				}
+			}
+		}
+		return ""
 	default:
 		// Default to chat model
 		if cfg.Models.ChatPrimary == "openai" && cfg.Models.OpenAI.APIKey != "" {
 			return cfg.Models.OpenAI.Model
 		}
-		return cfg.Models.Ollama.Llama3Model
+		if cfg.Models.Ollama.Models != nil {
+			for _, v := range cfg.Models.Ollama.Models {
+				if v != "" {
+					return v
+				}
+			}
+		}
+		return ""
 	}
 }
 

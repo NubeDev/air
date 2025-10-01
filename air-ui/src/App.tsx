@@ -6,6 +6,7 @@ import { WorkflowPage } from '@/pages/Workflow';
 import { FilesPage } from '@/pages/Files';
 import { ReportsPage } from '@/pages/Reports';
 import { ExecuteReportPage } from '@/pages/ExecuteReport';
+import { SettingsPage } from '@/pages/Settings';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/files" element={<FilesPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/reports/:id/execute" element={<ExecuteReportPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </MainLayout>
     </BrowserRouter>

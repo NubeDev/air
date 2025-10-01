@@ -8,23 +8,48 @@ export interface WebSocketMessage {
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
+  private connecting = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private messageHandlers: Map<string, (message: WebSocketMessage) => void> = new Map();
+  private sendQueue: Array<string> = [];
 
   constructor(private url: string) {}
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          resolve();
+          return;
+        }
+        if (this.connecting && this.ws) {
+          // Already connecting; wait for onopen
+          const wait = () => {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              resolve();
+            } else {
+              setTimeout(wait, 100);
+            }
+          };
+          wait();
+          return;
+        }
+        this.connecting = true;
         console.log('Connecting to WebSocket:', this.url);
         this.ws = new WebSocket(this.url);
         
         this.ws.onopen = () => {
           console.log('✅ WebSocket connected successfully');
           this.reconnectAttempts = 0;
+          this.connecting = false;
           window.dispatchEvent(new CustomEvent('ws-connected'));
+          // flush queued messages
+          while (this.sendQueue.length && this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const msg = this.sendQueue.shift();
+            if (msg) this.ws.send(msg);
+          }
           resolve();
         };
 
@@ -49,6 +74,7 @@ export class WebSocketService {
         this.ws.onclose = (event) => {
           console.log('WebSocket disconnected:', event.code, event.reason);
           window.dispatchEvent(new CustomEvent('ws-disconnected'));
+          this.connecting = false;
           if (event.code !== 1000) { // Not a normal closure
             this.reconnect();
           }
@@ -96,14 +122,26 @@ export class WebSocketService {
     this.messageHandlers.set(type, handler);
   }
 
+  offMessage(type: string, handler?: (message: WebSocketMessage) => void) {
+    const current = this.messageHandlers.get(type);
+    if (!handler || current === handler) {
+      this.messageHandlers.delete(type);
+    }
+  }
+
   sendMessage(message: Partial<WebSocketMessage>) {
+    const payload = JSON.stringify({
+      ...message,
+      timestamp: new Date().toISOString(),
+    });
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        ...message,
-        timestamp: new Date().toISOString(),
-      }));
-    } else {
-      console.error('WebSocket not connected');
+      this.ws.send(payload);
+      return;
+    }
+    // Queue and ensure connection
+    this.sendQueue.push(payload);
+    if (!this.connecting) {
+      this.connect().catch(console.error);
     }
   }
 
