@@ -1,0 +1,71 @@
+# Development Configuration Template
+# Copy this file to config-dev.yaml and fill in your actual values
+# This file is ignored by git to protect your API keys
+
+server:
+  host: "0.0.0.0"
+  port: 9000
+  auth_enabled: false
+
+database:
+  type: "sqlite"
+  dsn: "file:air.db?_fk=1"
+
+redis:
+  enabled: true
+  url: "redis://localhost:6379/0"
+
+websocket:
+  enabled: true
+  origins: ["http://localhost:3000", "http://localhost:3001"]
+
+models:
+  chat_primary: "openai"        # openai | llama3
+  chat_backup:  "llama3"
+  sql_primary:  "sqlcoder"
+  openai:
+    model: "gpt-4o-mini"
+    api_key: "YOUR_OPENAI_API_KEY_HERE"  # Set OPENAI_API_KEY environment variable instead
+  ollama:
+    host: "http://localhost:11434"
+    llama3_model: "llama3:latest"
+    sqlcoder_model: "sqlcoder:7b"
+  embeddings:
+    provider: "openai"          # or "ollama"
+    model: "text-embedding-3-small"
+
+datasources:
+  - id: "sqlite-dev"
+    name: "SQLite Development"
+    type: "sqlite"
+    config:
+      dsn: "file:data/analytics.db?_fk=1"
+  - id: "csv-dev"
+    name: "CSV Development"
+    type: "csv"
+    config:
+      directory: "uploads/"
+  - id: "postgres-dev"
+    name: "PostgreSQL Development"
+    type: "postgres"
+    config:
+      host: "localhost"
+      port: 5432
+      database: "air_dev"
+      username: "postgres"
+      password: "password"
+      ssl_mode: "disable"
+  - id: "mysql-dev"
+    name: "MySQL Development"
+    type: "mysql"
+    config:
+      host: "localhost"
+      port: 3306
+      database: "air_dev"
+      username: "root"
+      password: "password"
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
