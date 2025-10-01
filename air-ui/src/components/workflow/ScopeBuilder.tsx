@@ -16,16 +16,18 @@ import {
 interface ScopeBuilderProps {
   sessionId?: string;
   schemaData?: any;
-  onScopeBuilt: (data: { scopeData: any }) => void;
+  chatModel?: 'openai' | 'llama' | 'sqlcoder';
+  onScopeBuilt: (data: { scopeData: any; scopeText?: string; scopeId?: number; scopeVersionId?: number }) => void;
 }
 
-export function ScopeBuilder({ sessionId, schemaData, onScopeBuilt }: ScopeBuilderProps) {
+export function ScopeBuilder({ sessionId, schemaData, chatModel = 'llama', onScopeBuilt }: ScopeBuilderProps) {
   const [scopeText, setScopeText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scopeVersions, setScopeVersions] = useState<any[]>([]);
   const [currentVersion, setCurrentVersion] = useState<any>(null);
+  const [scopeId, setScopeId] = useState<number | null>(null);
 
   useEffect(() => {
     if (sessionId) {
@@ -34,54 +36,40 @@ export function ScopeBuilder({ sessionId, schemaData, onScopeBuilt }: ScopeBuild
   }, [sessionId]);
 
   const loadScopeVersions = async () => {
-    if (!sessionId) return;
-
-    try {
-      const response = await fetch(`/v1/sessions/${sessionId}/scope/versions`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setScopeVersions(data.versions || []);
-        if (data.versions && data.versions.length > 0) {
-          setCurrentVersion(data.versions[0]);
-          setScopeText(data.versions[0].scope_md || '');
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load scope versions:', err);
-    }
+    // No session-scoped versions API; we update local state after saving versions
+    return;
   };
 
   const generateScope = async () => {
-    if (!sessionId || !schemaData) return;
+    if (!schemaData) return;
 
     setIsGenerating(true);
     setError(null);
 
     try {
-      const response = await fetch(`/v1/sessions/${sessionId}/scope/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const schemaSummary = summarizeSchema(schemaData);
+      const messages = [
+        {
+          role: 'system',
+          content:
+            'You are AIR, a data analysis assistant. Given schema context and a short user goal, draft a concise analysis scope in markdown with clear objectives, metrics, dimensions, filters, and assumptions. Do not fabricate columns. Keep it practical.'
         },
-        body: JSON.stringify({
-          schema_data: schemaData,
-          context: 'Generate a comprehensive analysis scope based on the provided schema'
-        }),
+        {
+          role: 'user',
+          content: `Schema Context\n${schemaSummary}\n\nUser Goal: ${scopeText || 'Describe the dataset and propose a starter analysis scope.'}`
+        }
+      ];
+
+      const resp = await fetch('/v1/ai/chat/completion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, model: chatModel })
       });
-
-      if (!response.ok) {
-        throw new Error(`Scope generation failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setScopeText(data.scope_md || '');
-      
+      if (!resp.ok) throw new Error(`Scope generation failed: ${resp.statusText}`);
+      const data = await resp.json();
+      const content = data?.Message?.Content || data?.message?.content || '';
+      if (!content) throw new Error('Model response missing content');
+      setScopeText(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate scope');
     } finally {
@@ -89,64 +77,74 @@ export function ScopeBuilder({ sessionId, schemaData, onScopeBuilt }: ScopeBuild
     }
   };
 
-  const saveScope = async () => {
-    if (!sessionId || !scopeText.trim()) return;
+  const saveScope = async (): Promise<{ scopeId: number; version: any } | null> => {
+    if (!scopeText.trim()) return null;
 
     setIsSaving(true);
     setError(null);
 
     try {
-      const response = await fetch(`/v1/sessions/${sessionId}/scope/save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          scope_md: scopeText,
-          version_notes: 'User created scope'
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Scope save failed: ${response.statusText}`);
+      let id = scopeId;
+      if (!id) {
+        const create = await fetch('/v1/scopes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: `Session ${sessionId || 'N/A'} Scope` })
+        });
+        if (!create.ok) throw new Error(`Create scope failed: ${create.statusText}`);
+        const created = await create.json();
+        id = created.id;
+        setScopeId(id);
       }
 
-      const data = await response.json();
-      setCurrentVersion(data);
-      loadScopeVersions(); // Refresh versions
-      
+      const ver = await fetch(`/v1/scopes/${id}/version`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope_md: scopeText })
+      });
+      if (!ver.ok) throw new Error(`Create scope version failed: ${ver.statusText}`);
+      const version = await ver.json();
+      setCurrentVersion(version);
+      setScopeVersions((prev) => [version, ...prev]);
+      return { scopeId: id!, version };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save scope');
+      return null;
     } finally {
       setIsSaving(false);
     }
   };
 
   const refineScope = async () => {
-    if (!sessionId || !scopeText.trim()) return;
+    if (!scopeText.trim()) return;
 
     setIsGenerating(true);
     setError(null);
 
     try {
-      const response = await fetch(`/v1/sessions/${sessionId}/scope/refine`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const schemaSummary = summarizeSchema(schemaData);
+      const messages = [
+        {
+          role: 'system',
+          content:
+            'You are AIR. Refine the provided analysis scope. Keep structure, remove fluff, clarify objectives, metrics, dimensions, filters, assumptions. Do not invent columns. Return markdown only.'
         },
-        body: JSON.stringify({
-          current_scope: scopeText,
-          refinement_instructions: 'Please refine and improve this scope'
-        }),
+        {
+          role: 'user',
+          content: `Schema Context\n${schemaSummary}\n\nCurrent Scope:\n${scopeText}`
+        }
+      ];
+
+      const resp = await fetch('/v1/ai/chat/completion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, model: chatModel })
       });
-
-      if (!response.ok) {
-        throw new Error(`Scope refinement failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setScopeText(data.refined_scope || scopeText);
-      
+      if (!resp.ok) throw new Error(`Scope refinement failed: ${resp.statusText}`);
+      const data = await resp.json();
+      const content = data?.Message?.Content || data?.message?.content || '';
+      if (!content) throw new Error('Model response missing content');
+      setScopeText(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refine scope');
     } finally {
@@ -154,9 +152,38 @@ export function ScopeBuilder({ sessionId, schemaData, onScopeBuilt }: ScopeBuild
     }
   };
 
-  const handleScopeComplete = () => {
-    onScopeBuilt({ scopeData: { scope_md: scopeText, version: currentVersion } });
+  const handleScopeComplete = async () => {
+    let versionObj = currentVersion;
+    let id = scopeId;
+    if (!versionObj) {
+      const saved = await saveScope();
+      if (!saved) return; // error state already set
+      versionObj = saved.version;
+      id = saved.scopeId;
+    }
+    onScopeBuilt({
+      scopeData: { scope_md: scopeText, version: versionObj },
+      scopeText,
+      scopeId: id || undefined,
+      scopeVersionId: versionObj?.id,
+    });
   };
+
+  function summarizeSchema(schema: any): string {
+    if (!schema) return 'No schema provided.';
+    if (schema.columns) {
+      const cols = schema.columns.map((c: any) => c.name).join(', ');
+      const rows = schema.row_count ?? 'Unknown';
+      const file = schema.filename ?? 'Unknown file';
+      return `File: ${file}\nColumns: ${cols}\nRows: ${rows}`;
+    }
+    if (schema.tables) {
+      const tables = (schema.tables || []).map((t: any) => t.name).join(', ');
+      const db = schema.database_type ?? 'database';
+      return `Database: ${db}\nTables: ${tables}`;
+    }
+    return JSON.stringify(schema).slice(0, 800);
+  }
 
   return (
     <div className="space-y-6">

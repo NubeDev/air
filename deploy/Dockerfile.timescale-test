@@ -1,0 +1,8 @@
+FROM timescale/timescaledb:latest-pg16
+
+# Copy initialization scripts
+COPY init-schema.sh /docker-entrypoint-initdb.d/01-init-schema.sh
+COPY enable-timescaledb.sql /docker-entrypoint-initdb.d/02-enable-timescaledb.sql
+
+# Make script executable
+RUN chmod +x /docker-entrypoint-initdb.d/01-init-schema.sh

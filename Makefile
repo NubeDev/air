@@ -1,4 +1,4 @@
-.PHONY: check dev-backend logs-backend dev-ui logs-ui dev-data logs-data dev-all dev-backend-ui logs-all logs-backend-ui db down openapi-gen cli build clean clean-ports test deps deps-ui deps-python deps-all help
+.PHONY: check dev-backend logs-backend dev-ui logs-ui dev-data logs-data dev-all dev-backend-ui logs-all logs-backend-ui db down db-test down-test seed-test-db openapi-gen cli build clean clean-ports test deps deps-ui deps-python deps-all help
 
 # Default target
 all: check build
@@ -101,6 +101,30 @@ down:
 	@echo "Stopping analytics databases..."
 	docker compose -f deploy/docker-compose.yml down
 
+# Test database targets
+db-test:
+	@echo "Starting TimescaleDB test database with Rubix OS schema..."
+	docker compose -f deploy/docker-compose.yml up -d timescale-test
+	@echo "TimescaleDB test database started on port 5434"
+	@echo "Connection details:"
+	@echo "  Host: localhost"
+	@echo "  Port: 5434"
+	@echo "  Database: rubix_test"
+	@echo "  Username: rubix"
+	@echo "  Password: rubix"
+	@echo "  Connection string: postgres://rubix:rubix@localhost:5434/rubix_test"
+
+down-test:
+	@echo "Stopping TimescaleDB test database..."
+	docker compose -f deploy/docker-compose.yml stop timescale-test
+	@echo "To remove the test database completely (including data), run:"
+	@echo "  docker compose -f deploy/docker-compose.yml down timescale-test -v"
+
+# Seed test database with fake data
+seed-test-db:
+	@echo "Seeding test database with fake data..."
+	cd deploy && ./seed-database.sh
+
 # Code generation
 openapi-gen:
 	@echo "Generating OpenAPI code..."
@@ -202,6 +226,9 @@ help:
 	@echo "  run-dev        - Run with auth disabled"
 	@echo "  db             - Start analytics databases"
 	@echo "  down           - Stop analytics databases"
+	@echo "  db-test        - Start TimescaleDB test database with Rubix OS schema"
+	@echo "  down-test      - Stop TimescaleDB test database"
+	@echo "  seed-test-db   - Populate test database with fake data (buildings, devices, history)"
 	@echo "  openapi-gen    - Generate OpenAPI client/server code"
 	@echo "  deps           - Install Go dependencies"
 	@echo "  deps-ui        - Install UI dependencies (Node.js)"

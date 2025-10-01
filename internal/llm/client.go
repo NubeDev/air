@@ -36,9 +36,18 @@ func NewLLMClient(cfg *config.Config) (LLMClient, error) {
 
 // NewSQLClient creates the appropriate client for SQL generation
 func NewSQLClient(cfg *config.Config) (LLMClient, error) {
-	// For SQL generation, we might want to use a different model
-	// For now, use the same logic as chat
-	return NewLLMClient(cfg)
+	// Choose client based on SQL model preference, not chat
+	if cfg.Models.SQLPrimary == "openai" && cfg.Models.OpenAI.APIKey != "" {
+		logger.LogInfo(logger.ServiceAI, "Using OpenAI as SQL model", map[string]interface{}{
+			"model": cfg.Models.OpenAI.Model,
+		})
+		return NewOpenAIClient(cfg.Models.OpenAI)
+	}
+	// Default to Ollama (e.g., sqlcoder)
+	logger.LogInfo(logger.ServiceAI, "Using Ollama as SQL model", map[string]interface{}{
+		"model": cfg.Models.Ollama.SQLCoderModel,
+	})
+	return NewOllamaClient(cfg.Models.Ollama)
 }
 
 // GetModelName returns the appropriate model name based on config and type

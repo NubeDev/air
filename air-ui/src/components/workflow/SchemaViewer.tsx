@@ -61,8 +61,42 @@ export function SchemaViewer({ sessionId, sessionType, onSchemaLoaded }: SchemaV
           },
         });
       } else {
-        // Load database schema
-        response = await fetch(`/v1/schema/${sessionId}`, {
+        // Resolve datasource_id
+        let datasourceId: string | null = null;
+
+        // Try to read it from session options first
+        try {
+          const sessionResp = await fetch(`/v1/sessions/${sessionId}`);
+          if (sessionResp.ok) {
+            const sess = await sessionResp.json();
+            const opts = typeof sess.options === 'string' ? JSON.parse(sess.options || '{}') : (sess.options || {});
+            datasourceId = opts.datasource_id || sess.datasource_id || null;
+          }
+        } catch (_) {
+          // ignore and fall back to listing datasources
+        }
+
+        // Fallback: pick the first connected datasource
+        if (!datasourceId) {
+          const dsResp = await fetch('/v1/datasources');
+          if (!dsResp.ok) throw new Error(`Failed to list datasources: ${dsResp.statusText}`);
+          const dsJson = await dsResp.json();
+          const list = (dsJson.datasources || []) as Array<{ id: string; connected?: boolean }>;
+          const connected = list.find((d) => d.connected) || list[0];
+          if (!connected) throw new Error('No datasource available');
+          datasourceId = connected.id;
+        }
+
+        // Kick off learning for the datasource (idempotent)
+        const learnResp = await fetch('/v1/learn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ datasource_id: datasourceId }),
+        });
+        if (!learnResp.ok) throw new Error(`Learn failed: ${learnResp.statusText}`);
+
+        // Then fetch schema for that datasource
+        response = await fetch(`/v1/schema/${datasourceId}`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',

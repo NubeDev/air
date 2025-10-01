@@ -8,7 +8,7 @@
 *.so
 *.dylib
 bin/
-
+uploads/
 # Development config files (may contain sensitive data like API keys)
 data/config-dev.yaml
 data/config-local.yaml
