@@ -164,11 +164,21 @@ deps-all: deps deps-ui deps-python
 
 # Run with auth disabled (development)
 run-dev: build
+	@echo "Killing existing processes on port 9000..."
+	@-pkill -f "go run ./cmd/api" 2>/dev/null || true
+	@-pkill -f "bin/air" 2>/dev/null || true
+	@-fuser -k 9000/tcp 2>/dev/null || true
+	@sleep 1
 	@echo "Running AIR with authentication disabled..."
-	./bin/air --data data --config config-dev.yaml --auth
+	./bin/air --data data --config config-dev.yaml --auth disabled
 
 # Run with default config
 run: build
+	@echo "Killing existing processes on port 9000..."
+	@-pkill -f "go run ./cmd/api" 2>/dev/null || true
+	@-pkill -f "bin/air" 2>/dev/null || true
+	@-fuser -k 9000/tcp 2>/dev/null || true
+	@sleep 1
 	@echo "Running AIR..."
 	./bin/air --data data --config config.yaml
 

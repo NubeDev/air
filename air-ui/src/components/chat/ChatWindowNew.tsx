@@ -3,7 +3,7 @@ import { Message } from './Message';
 import { ChatInput } from './ChatInput';
 import { ModelSelector, type AIModel } from './ModelSelector';
 import { Button } from '@/components/ui/button';
-import { Database, Bug, X, FileText, Upload, ChevronDown } from 'lucide-react';
+import { Database, Bug, X, FileText, Upload, ChevronDown, Copy } from 'lucide-react';
 import { chatApi } from '@/services/chatApi';
 import { wsService } from '@/services/websocket';
 import type { ChatMessage } from '@/types/api';
@@ -17,11 +17,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<AIModel>('llama');
-  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string }>>({
-    llama: { connected: true },
-    openai: { connected: false, error: 'No API key configured' },
-    sqlcoder: { connected: true }
-  });
+  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string } | undefined>>({});
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'upload' | 'existing'>('upload');
@@ -33,6 +29,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [wsConnected, setWsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [typingMessage, setTypingMessage] = useState('');
+  const [rawAIMode, setRawAIMode] = useState(false);
 
   useEffect(() => {
     // Load model status and uploaded files
@@ -116,6 +113,17 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
     setDebugMessages(prev => [...prev, debugMsg]);
   };
 
+  const copyDebugMessages = async () => {
+    try {
+      const debugText = JSON.stringify(debugMessages, null, 2);
+      await navigator.clipboard.writeText(debugText);
+      // You could add a toast notification here if you have one
+      console.log('Debug messages copied to clipboard');
+    } catch (err) {
+      console.error('Failed to copy debug messages:', err);
+    }
+  };
+
   const handleSendMessage = async (content: string) => {
     if (!content.trim()) return;
 
@@ -162,7 +170,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
       } else {
         // General chat message via WebSocket
         const messageData = {
-          type: 'chat_message',
+          type: rawAIMode ? 'raw_ai_message' : 'chat_message',
           payload: {
             content: content,
             model: selectedModel,
@@ -173,6 +181,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
         addDebugMessage('user_message', {
           content,
           model: selectedModel,
+          rawMode: rawAIMode,
           timestamp: new Date().toISOString()
         });
         
@@ -647,6 +656,33 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       setTypingMessage('');
     });
 
+    // Handle raw AI responses
+    wsService.onMessage('raw_ai_response', (message) => {
+      // Capture debug info
+      addDebugMessage('raw_ai_response', {
+        content: message.payload.content,
+        model: message.payload.model || selectedModel,
+        timestamp: new Date().toISOString(),
+        fullMessage: message
+      });
+      
+      const aiMessage: ChatMessage = {
+        id: `raw_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        role: 'assistant',
+        content: message.payload.content,
+        timestamp: new Date().toISOString(),
+        model: message.payload.model || selectedModel,
+        metadata: {
+          type: 'raw_ai',
+          rawMode: true
+        }
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      setIsLoading(false);
+      setIsTyping(false);
+      setTypingMessage('');
+    });
+
     // Handle typing indicators
     wsService.onMessage('chat_typing', (message) => {
       if (message.payload.is_typing) {
@@ -687,6 +723,23 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
               onModelChange={setSelectedModel}
               modelStatus={modelStatus}
             />
+            
+            {/* Raw AI Mode Toggle */}
+            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+              <span className="text-sm font-medium">Raw AI Mode:</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rawAIMode}
+                  onChange={(e) => setRawAIMode(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+              <span className="text-xs text-gray-500">
+                {rawAIMode ? 'No system prompts' : 'Normal mode'}
+              </span>
+            </div>
             
             <Button
               variant="ghost"
@@ -843,6 +896,15 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={copyDebugMessages}
+                  disabled={debugMessages.length === 0}
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setDebugMessages([])}
                 >
                   Clear
@@ -875,11 +937,11 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
               onRemoveFile={handleRemoveFile}
               onAtCommand={handleAtCommand}
               attachedFiles={attachedFiles}
-              disabled={isLoading || !modelStatus[selectedModel].connected || !wsConnected}
+              disabled={isLoading || (modelStatus[selectedModel] && !modelStatus[selectedModel].connected) || !wsConnected}
               placeholder={
                 !wsConnected
                   ? 'Connecting to server...'
-                  : !modelStatus[selectedModel].connected 
+                  : modelStatus[selectedModel] && !modelStatus[selectedModel].connected 
                     ? `Cannot send message - ${modelStatus[selectedModel].error || 'No connection'}`
                     : selectedFile 
                       ? `Ask me about ${uploadedFiles.find(f => f.file_id === selectedFile)?.filename || 'your dataset'}...`

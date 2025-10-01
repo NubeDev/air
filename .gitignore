@@ -8,7 +8,12 @@
 *.so
 *.dylib
 bin/
+
+# Development config files (may contain sensitive data like API keys)
 data/config-dev.yaml
+data/config-local.yaml
+data/config-*.yaml
+!data/config.yaml
 
 # Test binary, built with `go test -c`
 *.test

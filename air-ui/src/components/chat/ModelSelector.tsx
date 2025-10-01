@@ -12,11 +12,14 @@ interface ModelStatus {
 interface ModelSelectorProps {
   selectedModel: AIModel;
   onModelChange: (model: AIModel) => void;
-  modelStatus: Record<AIModel, ModelStatus>;
+  modelStatus: Record<AIModel, ModelStatus | undefined>;
 }
 
 export function ModelSelector({ selectedModel, onModelChange, modelStatus }: ModelSelectorProps) {
-  const getStatusIcon = (status: ModelStatus) => {
+  const getStatusIcon = (status: ModelStatus | undefined) => {
+    if (!status) {
+      return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+    }
     if (status.connected) {
       return <CheckCircle className="h-4 w-4 text-green-500" />;
     } else if (status.error) {
@@ -26,7 +29,10 @@ export function ModelSelector({ selectedModel, onModelChange, modelStatus }: Mod
     }
   };
 
-  const getStatusText = (status: ModelStatus) => {
+  const getStatusText = (status: ModelStatus | undefined) => {
+    if (!status) {
+      return 'Loading...';
+    }
     if (status.connected) {
       return 'Connected';
     } else if (status.error) {
@@ -66,7 +72,7 @@ export function ModelSelector({ selectedModel, onModelChange, modelStatus }: Mod
       </Select>
       
       <Badge 
-        variant={modelStatus[selectedModel].connected ? "default" : "destructive"}
+        variant={modelStatus[selectedModel]?.connected ? "default" : "destructive"}
         className="text-xs"
       >
         {getStatusText(modelStatus[selectedModel])}

@@ -3,7 +3,7 @@ import { Message } from './Message';
 import { ChatInput } from './ChatInput';
 import { ModelSelector, type AIModel } from './ModelSelector';
 import { Button } from '@/components/ui/button';
-import { Database, Bug, Eye, EyeOff, X } from 'lucide-react';
+import { Database, Bug, Eye, EyeOff, X, Copy } from 'lucide-react';
 import { chatApi } from '@/services/chatApi';
 import { wsService } from '@/services/websocket';
 import type { ChatMessage } from '@/types/api';
@@ -17,11 +17,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<AIModel>('llama');
-  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string }>>({
-    llama: { connected: true },
-    openai: { connected: false, error: 'No API key configured' },
-    sqlcoder: { connected: true }
-  });
+  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string } | undefined>>({});
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'upload' | 'existing'>('upload');
@@ -68,6 +64,17 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
       data
     };
     setDebugMessages(prev => [...prev, debugMessage]);
+  };
+
+  const copyDebugMessages = async () => {
+    try {
+      const debugText = JSON.stringify(debugMessages, null, 2);
+      await navigator.clipboard.writeText(debugText);
+      // You could add a toast notification here if you have one
+      console.log('Debug messages copied to clipboard');
+    } catch (err) {
+      console.error('Failed to copy debug messages:', err);
+    }
   };
 
   // File attachment handlers
@@ -674,6 +681,15 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={copyDebugMessages}
+                  disabled={debugMessages.length === 0}
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setDebugMessages([])}
                 >
                   Clear
@@ -717,9 +733,9 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
           onFileAttach={handleFileAttach}
           onRemoveFile={handleRemoveFile}
           attachedFiles={attachedFiles}
-          disabled={isLoading || !modelStatus[selectedModel].connected}
+          disabled={isLoading || (modelStatus[selectedModel] && !modelStatus[selectedModel].connected)}
           placeholder={
-            !modelStatus[selectedModel].connected 
+            modelStatus[selectedModel] && !modelStatus[selectedModel].connected 
               ? `Cannot send message - ${modelStatus[selectedModel].error || 'No connection'}`
               : selectedFile 
                 ? `Ask me about ${uploadedFiles.find(f => f.file_id === selectedFile)?.filename || 'your dataset'}...`

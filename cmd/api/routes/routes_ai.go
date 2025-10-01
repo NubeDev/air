@@ -45,5 +45,6 @@ func SetupChatRoutes(rg *gin.RouterGroup, service *services.AIService, authMiddl
 	chat.Use(authMiddleware)
 	{
 		chat.POST("/completion", ai.ChatCompletion(service))
+		chat.POST("/raw", ai.AiRaw(service))
 	}
 }

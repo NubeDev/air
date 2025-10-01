@@ -11,6 +11,7 @@ import (
 	"github.com/NubeDev/air/internal/config"
 	"github.com/NubeDev/air/internal/logger"
 	"github.com/NubeDev/air/internal/redis"
+	"github.com/NubeDev/air/internal/services"
 	ws "github.com/NubeDev/air/internal/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -24,7 +25,7 @@ type Handler struct {
 }
 
 // NewHandler creates a new WebSocket handler
-func NewHandler(redisClient *redis.Client, wsConfig *config.WebSocketConfig, aiService interface{}) *Handler {
+func NewHandler(redisClient *redis.Client, wsConfig *config.WebSocketConfig, aiService *services.AIService) *Handler {
 	// Create WebSocket hub configuration
 	hubConfig := &ws.Config{
 		ReadBufferSize:    wsConfig.ReadBufferSize,

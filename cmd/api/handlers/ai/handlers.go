@@ -177,3 +177,44 @@ func GenerateSQL(service *services.AIService) gin.HandlerFunc {
 		})
 	}
 }
+
+// AiRaw handles raw AI requests without any system prompts or backend interference
+func AiRaw(service *services.AIService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Messages []llm.Message `json:"messages"`
+			Model    string        `json:"model,omitempty"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, store.ErrorResponse{
+				Error:   "Invalid request",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		// Map provider names to actual model names
+		model := req.Model
+		switch model {
+		case "openai":
+			model = "gpt-4o-mini"
+		case "llama":
+			model = "llama3:latest"
+		case "sqlcoder":
+			model = "sqlcoder:7b"
+		}
+
+		// Use raw AI service that bypasses all system prompts
+		response, err := service.AiRaw(req.Messages, model)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, store.ErrorResponse{
+				Error:   "Raw AI request failed",
+				Details: err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
+}

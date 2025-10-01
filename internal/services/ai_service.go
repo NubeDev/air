@@ -838,6 +838,49 @@ func (s *AIService) ChatCompletion(messages []llm.Message) (*llm.ChatResponse, e
 	return s.llmClient.ChatCompletion(ctx, req)
 }
 
+// AiRaw performs raw AI completion without any system prompts or backend interference
+func (s *AIService) AiRaw(messages []llm.Message, modelOverride string) (*llm.ChatResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use model override if provided, otherwise use the configured chat model
+	model := modelOverride
+	if model == "" {
+		model = llm.GetModelName(s.Config, "chat")
+	}
+
+	// Create the appropriate LLM client based on the model
+	var client llm.LLMClient
+	var err error
+
+	// Determine which client to use based on the model name
+	if strings.HasPrefix(model, "gpt-") {
+		// OpenAI model
+		client, err = llm.NewOpenAIClient(s.Config.Models.OpenAI)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
+		}
+	} else {
+		// Ollama model (llama3:latest, sqlcoder:7b, etc.)
+		client, err = llm.NewOllamaClient(s.Config.Models.Ollama)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Ollama client: %w", err)
+		}
+	}
+
+	req := llm.ChatRequest{
+		Model:    model,
+		Messages: messages, // Pass messages exactly as provided - no system prompts added
+		Stream:   false,
+		Options: &api.Options{
+			Temperature: 0.7,
+			TopP:        0.9,
+		},
+	}
+
+	return client.ChatCompletion(ctx, req)
+}
+
 // GenerateSQL generates SQL using SQLCoder model
 func (s *AIService) GenerateSQL(prompt string, schema string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

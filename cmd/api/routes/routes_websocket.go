@@ -7,6 +7,7 @@ import (
 	"github.com/NubeDev/air/internal/config"
 	"github.com/NubeDev/air/internal/logger"
 	"github.com/NubeDev/air/internal/redis"
+	"github.com/NubeDev/air/internal/services"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,7 +19,12 @@ func SetupWebSocketRoutes(router *gin.Engine, redisClient *redis.Client, wsConfi
 	}
 
 	// Create WebSocket handler
-	wsHandler := websocket.NewHandler(redisClient, wsConfig, aiService)
+	aiServiceTyped, ok := aiService.(*services.AIService)
+	if !ok {
+		logger.LogError(logger.ServiceWS, "Invalid AI service type", nil)
+		return
+	}
+	wsHandler := websocket.NewHandler(redisClient, wsConfig, aiServiceTyped)
 
 	// Start WebSocket hub
 	ctx := context.Background()

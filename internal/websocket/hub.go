@@ -62,9 +62,7 @@ type Hub struct {
 	Redis *redis.Client
 
 	// AI service for chat responses
-	AIService interface {
-		ChatCompletion(messages []llm.Message) (*llm.ChatResponse, error)
-	}
+	AIService interface{}
 
 	// Configuration
 	Config *Config
@@ -464,6 +462,9 @@ func (c *Client) handleMessage(message Message) {
 	case "chat_message":
 		// Handle chat message
 		c.handleChatMessage(message)
+	case "raw_ai_message":
+		// Handle raw AI message (no system prompts)
+		c.handleRawAIMessage(message)
 	default:
 		// Forward message to Redis for distribution
 		message.UserID = c.UserID
@@ -696,6 +697,132 @@ func (c *Client) handleChatMessage(message Message) {
 	go c.processChatMessage(content, model)
 }
 
+// handleRawAIMessage handles raw AI messages via WebSocket
+func (c *Client) handleRawAIMessage(message Message) {
+	// Extract raw AI message parameters
+	content, ok := message.Payload["content"].(string)
+	if !ok {
+		c.sendError("content is required")
+		return
+	}
+
+	model, _ := message.Payload["model"].(string)
+	if model == "" {
+		model = "gpt-4o-mini" // Default to the actual OpenAI model name
+	}
+
+	// Map provider names to actual model names
+	switch model {
+	case "openai":
+		model = "gpt-4o-mini"
+	case "llama":
+		model = "llama3:latest"
+	case "sqlcoder":
+		model = "sqlcoder:7b"
+	}
+
+	logger.LogInfo(logger.ServiceWS, "Processing raw AI message", map[string]interface{}{
+		"content": content,
+		"model":   model,
+		"user_id": c.UserID,
+	})
+
+	// Send typing indicator
+	c.sendMessage(Message{
+		Type: "chat_typing",
+		Payload: map[string]interface{}{
+			"is_typing": true,
+		},
+		Timestamp: time.Now(),
+	})
+
+	// Process the raw AI message
+	go c.processRawAIMessage(content, model)
+}
+
+// processRawAIMessage processes the actual raw AI message using real AI without system prompts
+func (c *Client) processRawAIMessage(content, model string) {
+	// Add panic recovery to prevent server crashes
+	defer func() {
+		if r := recover(); r != nil {
+			logger.LogError(logger.ServiceWS, "Panic in processRawAIMessage", fmt.Errorf("panic: %v", r), map[string]interface{}{
+				"content":   content,
+				"model":     model,
+				"client_id": c.ID,
+			})
+		}
+	}()
+
+	// Call raw AI service - no system prompts, just pass the user message directly
+	response, err := c.callRawAIService(content, model)
+	if err != nil {
+		logger.LogError(logger.ServiceWS, "Raw AI service call failed", err, map[string]interface{}{
+			"content": content,
+			"model":   model,
+		})
+		response = "I'm sorry, I'm having trouble processing your request right now. Please try again."
+	}
+
+	// Stop typing indicator
+	c.sendMessage(Message{
+		Type: "chat_typing",
+		Payload: map[string]interface{}{
+			"is_typing": false,
+		},
+		Timestamp: time.Now(),
+	})
+
+	// Small delay to prevent message concatenation
+	time.Sleep(50 * time.Millisecond)
+
+	// Send AI response
+	c.sendMessage(Message{
+		Type: "raw_ai_response",
+		Payload: map[string]interface{}{
+			"content": response,
+			"model":   model,
+		},
+		Timestamp: time.Now(),
+	})
+
+	logger.LogInfo(logger.ServiceWS, "Raw AI message processed", map[string]interface{}{
+		"content":  content,
+		"response": response,
+		"model":    model,
+	})
+}
+
+// callRawAIService calls the raw AI service without any system prompts
+func (c *Client) callRawAIService(content, model string) (string, error) {
+	if c.Hub.AIService == nil {
+		return "AI service is not available. Please check the configuration.", nil
+	}
+
+	// Create messages with only the user content - no system prompts
+	messages := []llm.Message{
+		{
+			Role:    "user",
+			Content: content,
+		},
+	}
+
+	// Type assert to get the AiRaw method
+	aiService, ok := c.Hub.AIService.(interface {
+		AiRaw(messages []llm.Message, modelOverride string) (*llm.ChatResponse, error)
+	})
+	if !ok {
+		return "AI service does not support raw mode.", nil
+	}
+
+	// Call the raw AI service
+	response, err := aiService.AiRaw(messages, model)
+	if err != nil {
+		return "", fmt.Errorf("raw AI service call failed: %w", err)
+	}
+
+	return response.Message.Content, nil
+}
+
 // processChatMessage processes the actual chat message using real AI
 func (c *Client) processChatMessage(content, model string) {
 	// Add panic recovery to prevent server crashes
@@ -815,8 +942,16 @@ func (c *Client) callAIService(content, model string) (string, error) {
 		}
 	}
 
+	// Type assert to get the ChatCompletion method
+	aiService, ok := c.Hub.AIService.(interface {
+		ChatCompletion(messages []llm.Message) (*llm.ChatResponse, error)
+	})
+	if !ok {
+		return "AI service is not available.", nil
+	}
+
 	// Call the AI service
-	response, err := c.Hub.AIService.ChatCompletion(messages)
+	response, err := aiService.ChatCompletion(messages)
 	if err != nil {
 		return "", fmt.Errorf("AI service call failed: %w", err)
 	}
@@ -942,8 +1077,16 @@ func (c *Client) analyzeFileWithAI(filePath, query, model string) (string, []str
 		},
 	}
 
+	// Type assert to get the ChatCompletion method
+	aiService, ok := c.Hub.AIService.(interface {
+		ChatCompletion(messages []llm.Message) (*llm.ChatResponse, error)
+	})
+	if !ok {
+		return "", nil, nil, fmt.Errorf("AI service is not available")
+	}
+
 	// Call AI service
-	response, err := c.Hub.AIService.ChatCompletion(messages)
+	response, err := aiService.ChatCompletion(messages)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("AI analysis failed: %w", err)
 	}
