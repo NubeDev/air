@@ -33,7 +33,7 @@ export function ChatHeader({
     <div className="flex-shrink-0 border-b bg-white px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-primary' : 'bg-destructive'}`} />
           <span className="text-xs text-gray-500">
             {wsConnected ? 'Connected' : 'Disconnected'}
           </span>
@@ -55,7 +55,7 @@ export function ChatHeader({
                 onChange={(e) => onToggleRawMode?.(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:-ml-8 after:w-4 after:h-4 after:bg-white after:rounded-full after:translate-x-1 peer-checked:after:translate-x-6 after:transition" />
+              <div className="w-10 h-5 bg-gray-200 rounded-full peer peer-checked:bg-primary after:content-[''] after:absolute after:-ml-8 after:w-4 after:h-4 after:bg-white after:rounded-full after:translate-x-1 peer-checked:after:translate-x-6 after:transition" />
             </label>
           </div>
 
@@ -63,7 +63,7 @@ export function ChatHeader({
             variant="ghost"
             size="sm"
             onClick={onToggleDebug}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-500 hover:text-secondary"
           >
             <Bug className="h-4 w-4" />
           </Button>
