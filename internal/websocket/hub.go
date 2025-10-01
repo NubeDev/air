@@ -465,6 +465,9 @@ func (c *Client) handleMessage(message Message) {
 	case "raw_ai_message":
 		// Handle raw AI message (no system prompts)
 		c.handleRawAIMessage(message)
+	case "ephemeral_file_select":
+		// Handle file selection from ephemeral card
+		c.handleEphemeralFileSelect(message)
 	default:
 		// Forward message to Redis for distribution
 		message.UserID = c.UserID
@@ -884,8 +887,8 @@ func (c *Client) callAIService(content, model string) (string, error) {
 	// Check if user has a loaded file and should analyze it
 	var messages []llm.Message
 
-	// If user asks generic questions and has a loaded file, analyze it
-	if (strings.Contains(strings.ToLower(content), "what can you tell me") ||
+	// Check if user is asking for analysis
+	isAnalysisRequest := strings.Contains(strings.ToLower(content), "what can you tell me") ||
 		strings.Contains(strings.ToLower(content), "analyze") ||
 		strings.Contains(strings.ToLower(content), "tell me about") ||
 		strings.Contains(strings.ToLower(content), "what is") ||
@@ -900,7 +903,26 @@ func (c *Client) callAIService(content, model string) (string, error) {
 		strings.Contains(strings.ToLower(content), "data") ||
 		strings.Contains(strings.ToLower(content), "show me") ||
 		strings.Contains(strings.ToLower(content), "find") ||
-		strings.Contains(strings.ToLower(content), "list")) && c.selectedFile != "" {
+		strings.Contains(strings.ToLower(content), "list")
+
+	// If user asks for analysis but has no file loaded, send file needed message
+	if isAnalysisRequest && c.selectedFile == "" {
+		// Send ephemeral message to prompt for file selection
+		c.sendMessage(Message{
+			Type: "ephemeral_file_needed",
+			Payload: map[string]interface{}{
+				"message": "To analyze data, please select or upload a file first.",
+				"files":   c.getAvailableFiles(),
+			},
+			Timestamp: time.Now(),
+		})
+
+		// Return early to prevent regular AI response
+		return "File needed for analysis", nil
+	}
+
+	// If user asks for analysis and has a loaded file, analyze it
+	if isAnalysisRequest && c.selectedFile != "" {
 
 		// Get file data for analysis
 		fileData, err := c.getFileDataForAnalysis(c.selectedFile)
@@ -1100,4 +1122,87 @@ func (c *Client) analyzeFileWithAI(filePath, query, model string) (string, []str
 	suggestions := []string{}
 
 	return analysis, insights, suggestions, nil
+}
+
+// getAvailableFiles returns a list of available files for the client
+func (c *Client) getAvailableFiles() []map[string]interface{} {
+	uploadDir := "uploads"
+	files := []map[string]interface{}{}
+
+	// Check if uploads directory exists
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		return files
+	}
+
+	// Read directory
+	dirFiles, err := os.ReadDir(uploadDir)
+	if err != nil {
+		logger.LogError(logger.ServiceWS, "Failed to read uploads directory", err)
+		return files
+	}
+
+	// Build file list
+	for _, file := range dirFiles {
+		if !file.IsDir() {
+			fileInfo, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			files = append(files, map[string]interface{}{
+				"file_id":     file.Name(),
+				"filename":    file.Name(),
+				"file_size":   fileInfo.Size(),
+				"upload_time": fileInfo.ModTime().Format(time.RFC3339),
+				"file_type":   strings.ToLower(strings.TrimPrefix(filepath.Ext(file.Name()), ".")),
+			})
+		}
+	}
+
+	return files
+}
+
+// handleEphemeralFileSelect handles file selection from ephemeral card
+func (c *Client) handleEphemeralFileSelect(message Message) {
+	fileID, ok := message.Payload["file_id"].(string)
+	if !ok {
+		c.sendError("file_id is required")
+		return
+	}
+
+	// Set the selected file
+	c.mu.Lock()
+	c.selectedFile = fileID
+	c.mu.Unlock()
+
+	// Get file info for confirmation
+	files := c.getAvailableFiles()
+	var selectedFile map[string]interface{}
+	for _, file := range files {
+		if file["file_id"] == fileID {
+			selectedFile = file
+			break
+		}
+	}
+
+	if selectedFile != nil {
+		// Send confirmation message
+		c.sendMessage(Message{
+			Type: "ephemeral_file_loaded",
+			Payload: map[string]interface{}{
+				"file_id":   fileID,
+				"filename":  selectedFile["filename"],
+				"file_size": selectedFile["file_size"],
+			},
+			Timestamp: time.Now(),
+		})
+
+		logger.LogInfo(logger.ServiceWS, "File selected via ephemeral card", map[string]interface{}{
+			"file_id":  fileID,
+			"filename": selectedFile["filename"],
+			"user_id":  c.UserID,
+		})
+	} else {
+		c.sendError("File not found")
+	}
 }

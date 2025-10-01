@@ -4,6 +4,7 @@ import { ChatInput } from './ChatInput';
 import { ModelSelector, type AIModel } from './ModelSelector';
 import { Button } from '@/components/ui/button';
 import { Database, Bug, X, FileText, Upload, ChevronDown, Copy } from 'lucide-react';
+import { EphemeralSystemCard } from './EphemeralSystemCard';
 import { chatApi } from '@/services/chatApi';
 import { wsService } from '@/services/websocket';
 import type { ChatMessage } from '@/types/api';
@@ -30,6 +31,11 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [typingMessage, setTypingMessage] = useState('');
   const [rawAIMode, setRawAIMode] = useState(false);
+  const [ephemeralCard, setEphemeralCard] = useState<{
+    type: 'file_needed' | 'file_loaded' | 'uploading';
+    files?: Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>;
+    selectedFileName?: string;
+  } | null>(null);
 
   useEffect(() => {
     // Load model status and uploaded files
@@ -556,6 +562,36 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
     }
   };
 
+  // Handle file selection from ephemeral card
+  const handleEphemeralFileSelect = (fileId: string) => {
+    // Send WebSocket message to select file
+    wsService.sendMessage({
+      type: 'ephemeral_file_select',
+      payload: {
+        file_id: fileId
+      }
+    });
+    
+    // Update local state
+    setSelectedFile(fileId);
+    setEphemeralCard(null);
+  };
+
+  // Handle upload click from ephemeral card
+  const handleEphemeralUploadClick = () => {
+    // Trigger file input click
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
+    }
+    setEphemeralCard(null);
+  };
+
+  // Handle ephemeral card dismiss
+  const handleEphemeralDismiss = () => {
+    setEphemeralCard(null);
+  };
+
   const handleFileAttach = (file: File) => {
     setAttachedFiles(prev => [...prev, file]);
   };
@@ -681,6 +717,29 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       setIsLoading(false);
       setIsTyping(false);
       setTypingMessage('');
+    });
+
+    // Handle ephemeral file needed message
+    wsService.onMessage('ephemeral_file_needed', (message) => {
+      setEphemeralCard({
+        type: 'file_needed',
+        files: message.payload.files || []
+      });
+      setIsLoading(false);
+      setIsTyping(false);
+      setTypingMessage('');
+    });
+
+    // Handle ephemeral file loaded confirmation
+    wsService.onMessage('ephemeral_file_loaded', (message) => {
+      setEphemeralCard({
+        type: 'file_loaded',
+        selectedFileName: message.payload.filename
+      });
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setEphemeralCard(null);
+      }, 3000);
     });
 
     // Handle typing indicators
@@ -855,6 +914,18 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
           <div className="h-full overflow-y-auto" ref={scrollAreaRef} onScroll={handleScroll}>
             <div className="max-w-4xl mx-auto px-4 py-6">
               <div className="space-y-6">
+                {/* Ephemeral System Card */}
+                {ephemeralCard && (
+                  <EphemeralSystemCard
+                    type={ephemeralCard.type}
+                    files={ephemeralCard.files}
+                    selectedFileName={ephemeralCard.selectedFileName}
+                    onFileSelect={handleEphemeralFileSelect}
+                    onUploadClick={handleEphemeralUploadClick}
+                    onDismiss={handleEphemeralDismiss}
+                  />
+                )}
+                
                 {messages.map((message) => (
                   <Message key={message.id} message={message} />
                 ))}

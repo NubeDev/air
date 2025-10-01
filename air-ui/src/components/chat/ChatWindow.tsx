@@ -4,6 +4,7 @@ import { ChatInput } from './ChatInput';
 import { ModelSelector, type AIModel } from './ModelSelector';
 import { Button } from '@/components/ui/button';
 import { Database, Bug, Eye, EyeOff, X, Copy } from 'lucide-react';
+import { EphemeralSystemCard } from './EphemeralSystemCard';
 import { chatApi } from '@/services/chatApi';
 import { wsService } from '@/services/websocket';
 import type { ChatMessage } from '@/types/api';
@@ -26,6 +27,11 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [showDebug, setShowDebug] = useState(false);
   const [debugMessages, setDebugMessages] = useState<any[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [ephemeralCard, setEphemeralCard] = useState<{
+    type: 'file_needed' | 'file_loaded' | 'uploading';
+    files?: Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>;
+    selectedFileName?: string;
+  } | null>(null);
 
   useEffect(() => {
     // Load model status and uploaded files
@@ -84,6 +90,36 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
 
   const handleRemoveFile = (index: number) => {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Handle file selection from ephemeral card
+  const handleEphemeralFileSelect = (fileId: string) => {
+    // Send WebSocket message to select file
+    wsService.sendMessage({
+      type: 'ephemeral_file_select',
+      payload: {
+        file_id: fileId
+      }
+    });
+    
+    // Update local state
+    setSelectedFile(fileId);
+    setEphemeralCard(null);
+  };
+
+  // Handle upload click from ephemeral card
+  const handleEphemeralUploadClick = () => {
+    // Trigger file input click
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
+    }
+    setEphemeralCard(null);
+  };
+
+  // Handle ephemeral card dismiss
+  const handleEphemeralDismiss = () => {
+    setEphemeralCard(null);
   };
 
   const loadModelStatus = async () => {
@@ -488,14 +524,35 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
           setIsLoading(false);
         });
 
-        // Handle typing indicators
-        wsService.onMessage('chat_typing', (message) => {
-          if (message.payload.is_typing) {
-            setIsLoading(true);
-          } else {
-            setIsLoading(false);
-          }
-        });
+    // Handle typing indicators
+    wsService.onMessage('chat_typing', (message) => {
+      if (message.payload.is_typing) {
+        setIsLoading(true);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    // Handle ephemeral file needed message
+    wsService.onMessage('ephemeral_file_needed', (message) => {
+      setEphemeralCard({
+        type: 'file_needed',
+        files: message.payload.files || []
+      });
+      setIsLoading(false);
+    });
+
+    // Handle ephemeral file loaded confirmation
+    wsService.onMessage('ephemeral_file_loaded', (message) => {
+      setEphemeralCard({
+        type: 'file_loaded',
+        selectedFileName: message.payload.filename
+      });
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setEphemeralCard(null);
+      }, 3000);
+    });
 
     // Cleanup on unmount
     return () => {
@@ -626,6 +683,18 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
                   Start a conversation to begin analyzing your data.
                 </p>
               </div>
+            )}
+            
+            {/* Ephemeral System Card */}
+            {ephemeralCard && (
+              <EphemeralSystemCard
+                type={ephemeralCard.type}
+                files={ephemeralCard.files}
+                selectedFileName={ephemeralCard.selectedFileName}
+                onFileSelect={handleEphemeralFileSelect}
+                onUploadClick={handleEphemeralUploadClick}
+                onDismiss={handleEphemeralDismiss}
+              />
             )}
             
             {messages.map((message) => (
