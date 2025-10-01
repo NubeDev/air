@@ -50,6 +50,99 @@ func NewAIService(registry *datasource.Registry, db *gorm.DB, cfg *config.Config
 	}, nil
 }
 
+// GetModelDefaults returns default model IDs for capabilities based on current config
+func (s *AIService) GetModelDefaults() map[string]string {
+	defaults := make(map[string]string)
+
+	// Chat default
+	if s.Config.Models.ChatPrimary == "openai" && s.Config.Models.OpenAI.Model != "" && s.Config.Models.OpenAI.APIKey != "" {
+		defaults["chat"] = "openai:" + s.Config.Models.OpenAI.Model
+	} else if s.Config.Models.Ollama.Llama3Model != "" {
+		defaults["chat"] = "ollama:" + s.Config.Models.Ollama.Llama3Model
+	}
+
+	// SQL default
+	if s.Config.Models.SQLPrimary == "openai" && s.Config.Models.OpenAI.Model != "" && s.Config.Models.OpenAI.APIKey != "" {
+		defaults["sql"] = "openai:" + s.Config.Models.OpenAI.Model
+	} else if s.Config.Models.Ollama.SQLCoderModel != "" {
+		defaults["sql"] = "ollama:" + s.Config.Models.Ollama.SQLCoderModel
+	}
+
+	return defaults
+}
+
+// GetModels enumerates available models from current config (back-compat view)
+func (s *AIService) GetModels() []map[string]interface{} {
+	models := make([]map[string]interface{}, 0, 4)
+
+	// Ollama chat model (llama3)
+	if s.Config.Models.Ollama.Llama3Model != "" {
+		models = append(models, map[string]interface{}{
+			"id":           "ollama:" + s.Config.Models.Ollama.Llama3Model,
+			"provider":     "ollama",
+			"name":         s.Config.Models.Ollama.Llama3Model,
+			"capabilities": []string{"chat"},
+		})
+	}
+
+	// Ollama sqlcoder model
+	if s.Config.Models.Ollama.SQLCoderModel != "" {
+		models = append(models, map[string]interface{}{
+			"id":           "ollama:" + s.Config.Models.Ollama.SQLCoderModel,
+			"provider":     "ollama",
+			"name":         s.Config.Models.Ollama.SQLCoderModel,
+			"capabilities": []string{"sql"},
+		})
+	}
+
+	// OpenAI default chat model (only if API key present)
+	if s.Config.Models.OpenAI.Model != "" && s.Config.Models.OpenAI.APIKey != "" {
+		models = append(models, map[string]interface{}{
+			"id":           "openai:" + s.Config.Models.OpenAI.Model,
+			"provider":     "openai",
+			"name":         s.Config.Models.OpenAI.Model,
+			"capabilities": []string{"chat"},
+		})
+	}
+
+	return models
+}
+
+// SetPrimaryModel updates in-memory defaults for a capability based on a model ID
+// capability: "chat" | "sql"; modelID: "openai:<name>" | "ollama:<name>"
+func (s *AIService) SetPrimaryModel(capability, modelID string) error {
+	if capability == "" || modelID == "" {
+		return fmt.Errorf("capability and model are required")
+	}
+
+	// Parse provider from modelID
+	provider := ""
+	if strings.HasPrefix(modelID, "openai:") {
+		provider = "openai"
+	} else if strings.HasPrefix(modelID, "ollama:") {
+		provider = "ollama"
+	} else {
+		return fmt.Errorf("unsupported model provider in id: %s", modelID)
+	}
+
+	switch capability {
+	case "chat":
+		// Update ChatPrimary based on provider
+		s.Config.Models.ChatPrimary = provider
+	case "sql":
+		s.Config.Models.SQLPrimary = provider
+	default:
+		return fmt.Errorf("unknown capability: %s", capability)
+	}
+
+	logger.LogInfo(logger.ServiceAI, "Primary model updated (in-memory)", map[string]interface{}{
+		"capability": capability,
+		"model":      modelID,
+		"provider":   provider,
+	})
+	return nil
+}
+
 // BuildIR builds Intermediate Representation from scope
 func (s *AIService) BuildIR(req store.BuildIRRequest) (map[string]interface{}, error) {
 	start := time.Now()

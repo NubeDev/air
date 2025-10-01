@@ -12,6 +12,29 @@ import (
 func SetupAIModelRoutes(router *gin.RouterGroup, aiService *services.AIService) {
 	aiGroup := router.Group("/ai")
 	{
+		aiGroup.GET("/models", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"defaults": aiService.GetModelDefaults(),
+				"models":   aiService.GetModels(),
+			})
+		})
+
+		aiGroup.POST("/models/primary", func(c *gin.Context) {
+			var req struct {
+				Capability string `json:"capability" binding:"required"`
+				Model      string `json:"model" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+			if err := aiService.SetPrimaryModel(req.Capability, req.Model); err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(200, gin.H{"status": "ok"})
+		})
+
 		aiGroup.GET("/models/status", func(c *gin.Context) {
 			// Check model status dynamically
 			status := make(map[string]interface{})
@@ -61,7 +84,11 @@ func SetupAIModelRoutes(router *gin.RouterGroup, aiService *services.AIService) 
 			// SQLCoder is typically the same as Ollama
 			status["sqlcoder"] = status["llama"]
 
-			c.JSON(200, status)
+			c.JSON(200, gin.H{
+				"defaults": aiService.GetModelDefaults(),
+				"models":   aiService.GetModels(),
+				"health":   status,
+			})
 		})
 	}
 }
