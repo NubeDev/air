@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { Message } from './Message';
 import { ChatInput } from './ChatInput';
-import { ModelSelector, type AIModel } from './ModelSelector';
+import { type AIModel } from './ModelSelector';
 import { Button } from '@/components/ui/button';
-import { Database, Bug, X, FileText, Upload, ChevronDown, Copy } from 'lucide-react';
+import { Database, X, FileText, Upload, ChevronDown, Copy } from 'lucide-react';
 import { EphemeralSystemCard } from './EphemeralSystemCard';
+import { FloatingDot } from './FloatingDot';
+import { ChatHeader } from './ChatHeader';
+import { MessageList } from './MessageList';
+import { AnalyzeQuickAction } from './AnalyzeQuickAction';
 import { chatApi } from '@/services/chatApi';
 import { wsService } from '@/services/websocket';
 import type { ChatMessage } from '@/types/api';
@@ -18,7 +21,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<AIModel>('llama');
-  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string } | undefined>>({});
+  const [modelStatus, setModelStatus] = useState<Record<AIModel, { connected: boolean; error?: string } | undefined>>({} as Record<AIModel, { connected: boolean; error?: string } | undefined>);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'upload' | 'existing'>('upload');
@@ -28,9 +31,11 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
   const [debugMessages, setDebugMessages] = useState<any[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
+  const [backendPending, setBackendPending] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [typingMessage, setTypingMessage] = useState('');
   const [rawAIMode, setRawAIMode] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [ephemeralCard, setEphemeralCard] = useState<{
     type: 'file_needed' | 'file_loaded' | 'uploading';
     files?: Array<{ file_id: string; filename: string; file_size: number; upload_time: string; file_type: string }>;
@@ -160,6 +165,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
       setIsLoading(true);
       setIsTyping(true);
       setTypingMessage('AI is thinking...');
+      setBackendPending(true);
       
       // If files are attached, analyze them
       if (attachedFiles.length > 0) {
@@ -205,6 +211,7 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setBackendPending(false);
     }
   };
 
@@ -265,25 +272,24 @@ export function ChatWindow({ reportId }: ChatWindowProps) {
           }
           
           if (file) {
-            // Stage the file and ask for scope/questions
+            // Immediately load the dataset via WebSocket and set locally
+            wsService.sendMessage({
+              type: 'load_dataset',
+              payload: {
+                filename: file.file_id
+              }
+            });
             setSelectedFile(file.file_id);
             
-            const stageMessage: ChatMessage = {
-              id: `at_load_stage_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            // Brief confirmation inline (non-ephemeral)
+            const confirmMessage: ChatMessage = {
+              id: `at_load_ok_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               role: 'assistant',
-              content: `📁 **File staged for loading: ${filename}**
-
-**What would you like to do with this file?**
-- Ask a question about the data
-- Request an analysis
-- Generate a report
-- Or just say "analyze" to get started
-
-Type your question or press Enter to proceed with basic analysis.`,
+              content: `✅ Loaded dataset: ${filename}`,
               timestamp: new Date().toISOString(),
               report_id: reportId,
             };
-            setMessages(prev => [...prev, stageMessage]);
+            setMessages(prev => [...prev, confirmMessage]);
           } else {
             const errorMessage: ChatMessage = {
               id: `at_load_error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -647,26 +653,20 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
     // Handle load dataset success
     wsService.onMessage('load_dataset_success', (message) => {
       setSelectedFile(message.payload.filename);
-      const successMessage: ChatMessage = {
-        id: `load_success_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        role: 'assistant',
-        content: message.payload.message,
-        timestamp: new Date().toISOString(),
-        model: selectedModel,
-      };
-      setMessages(prev => [...prev, successMessage]);
+      // toast success and update recent list
+      setToast({ type: 'success', message: `Loaded dataset: ${message.payload.filename}` });
+      try {
+        const recent = JSON.parse(localStorage.getItem('air_recent_files') || '[]');
+        const next = [message.payload.filename, ...recent.filter((f: string) => f !== message.payload.filename)].slice(0, 5);
+        localStorage.setItem('air_recent_files', JSON.stringify(next));
+      } catch {}
     });
 
     // Handle load dataset error
     wsService.onMessage('load_dataset_error', (message) => {
-      const errorMessage: ChatMessage = {
-        id: `load_error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        role: 'assistant',
-        content: `❌ Load failed: ${message.payload.error}`,
-        timestamp: new Date().toISOString(),
-        model: selectedModel,
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      // rollback optimistic selection
+      setSelectedFile('');
+      setToast({ type: 'error', message: `Load failed: ${message.payload.error}` });
     });
 
     // Handle chat responses
@@ -688,6 +688,7 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       };
       setMessages(prev => [...prev, aiMessage]);
       setIsLoading(false);
+      setBackendPending(false);
       setIsTyping(false);
       setTypingMessage('');
     });
@@ -708,15 +709,14 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
         content: message.payload.content,
         timestamp: new Date().toISOString(),
         model: message.payload.model || selectedModel,
-        metadata: {
-          type: 'raw_ai',
-          rawMode: true
-        }
+        metadata: undefined
       };
       setMessages(prev => [...prev, aiMessage]);
       setIsLoading(false);
+      setBackendPending(false);
       setIsTyping(false);
       setTypingMessage('');
+      setBackendPending(false);
     });
 
     // Handle ephemeral file needed message
@@ -747,9 +747,11 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       if (message.payload.is_typing) {
         setIsTyping(true);
         setTypingMessage('AI is typing...');
+        setBackendPending(true);
       } else {
         setIsTyping(false);
         setTypingMessage('');
+        setBackendPending(false);
       }
     });
 
@@ -768,52 +770,22 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
             <h1 className="text-lg font-semibold text-gray-900">AIR Assistant</h1>
           </div>
           
-          <div className="flex items-center space-x-3">
-            {/* WebSocket Status */}
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-              <span className="text-xs text-gray-500">
-                {wsConnected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
-            
-            <ModelSelector 
-              selectedModel={selectedModel}
-              onModelChange={setSelectedModel}
-              modelStatus={modelStatus}
-            />
-            
-            {/* Raw AI Mode Toggle */}
-            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-              <span className="text-sm font-medium">Raw AI Mode:</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rawAIMode}
-                  onChange={(e) => setRawAIMode(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-              <span className="text-xs text-gray-500">
-                {rawAIMode ? 'No system prompts' : 'Normal mode'}
-              </span>
-            </div>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowDebug(!showDebug)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <Bug className="h-4 w-4" />
-            </Button>
-          </div>
+          <ChatHeader
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            modelStatus={modelStatus}
+            wsConnected={wsConnected}
+            rawAIMode={rawAIMode}
+            onToggleRawMode={setRawAIMode}
+            showDebug={showDebug}
+            onToggleDebug={() => setShowDebug(!showDebug)}
+          />
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
+        <FloatingDot visible={backendPending} text={wsConnected ? 'Waiting on backend…' : 'Disconnected'} status={wsConnected ? 'waiting' : 'error'} />
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center px-4">
             <div className="max-w-2xl w-full text-center">
@@ -911,38 +883,44 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
             </div>
           </div>
         ) : (
-          <div className="h-full overflow-y-auto" ref={scrollAreaRef} onScroll={handleScroll}>
-            <div className="max-w-4xl mx-auto px-4 py-6">
-              <div className="space-y-6">
-                {/* Ephemeral System Card */}
-                {ephemeralCard && (
-                  <EphemeralSystemCard
-                    type={ephemeralCard.type}
-                    files={ephemeralCard.files}
-                    selectedFileName={ephemeralCard.selectedFileName}
-                    onFileSelect={handleEphemeralFileSelect}
-                    onUploadClick={handleEphemeralUploadClick}
-                    onDismiss={handleEphemeralDismiss}
-                  />
-                )}
-                
-                {messages.map((message) => (
-                  <Message key={message.id} message={message} />
-                ))}
-                
-                {/* Typing Indicator */}
-                {isTyping && (
-                  <div className="flex items-center space-x-2 text-gray-500">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
-                    <span className="text-sm">{typingMessage}</span>
-                  </div>
-                )}
+          <div className="h-full">
+            {ephemeralCard && (
+              <div className="max-w-4xl mx-auto px-4 pt-4">
+                <EphemeralSystemCard
+                  type={ephemeralCard.type}
+                  files={ephemeralCard.files}
+                  selectedFileName={ephemeralCard.selectedFileName}
+                  onFileSelect={handleEphemeralFileSelect}
+                  onUploadClick={handleEphemeralUploadClick}
+                  onDismiss={handleEphemeralDismiss}
+                />
               </div>
-            </div>
+            )}
+            {/* Messages */}
+            <MessageList
+              messages={messages}
+              isTyping={isTyping}
+              typingMessage={typingMessage}
+              scrollAreaRef={scrollAreaRef}
+              onScroll={handleScroll}
+              footer={selectedFile && !isTyping ? (
+                <div className="flex justify-start">
+                  <AnalyzeQuickAction
+                    disabled={!wsConnected}
+                    onAnalyze={() => {
+                      const defaultQuery = 'Analyze this dataset and provide key insights.';
+                      wsService.sendMessage({
+                        type: 'file_analysis',
+                        payload: { file_id: selectedFile, query: defaultQuery, model: selectedModel },
+                      });
+                      setIsTyping(true);
+                      setTypingMessage('Analyzing dataset...');
+                      setBackendPending(true);
+                    }}
+                  />
+                </div>
+              ) : null}
+            />
           </div>
         )}
         
@@ -1002,6 +980,17 @@ ${uploadedFiles.map((f, i) => `${i + 1}. ${f.filename}`).join('\n')}
       <div className="flex-shrink-0 border-t bg-white px-4 py-4 sticky bottom-0 z-50">
         <div className="max-w-4xl mx-auto">
           <div className="relative">
+            {/* Toast */}
+            {toast && (
+              <div
+                className={`absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-2 rounded text-sm shadow ${
+                  toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                }`}
+                onAnimationEnd={() => setToast(null)}
+              >
+                {toast.message}
+              </div>
+            )}
             <ChatInput 
               onSend={handleSendMessage}
               onFileAttach={handleFileAttach}

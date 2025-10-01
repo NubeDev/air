@@ -93,6 +93,13 @@ export function ChatInput({
       examples: ['@files']
     },
     {
+      command: '@recent',
+      description: 'Recently used files',
+      icon: FileText,
+      usage: '@recent',
+      examples: ['@recent']
+    },
+    {
       command: '@db',
       description: 'List available databases',
       icon: Database,
@@ -148,31 +155,30 @@ export function ChatInput({
     }
   };
 
-  // Handle @ command detection
+  // Handle @ command detection (Cursor-like): show commands + files when typing '@'
   useEffect(() => {
-    if (message.startsWith('@') && message.length > 0) {
+    if (message.startsWith('@')) {
       setShowAtCommands(true);
       setSelectedAtCommandIndex(0);
-      
-      // Parse @ command
-      const parts = message.split(' ');
-      const atPart = parts[0];
-      
-      if (atPart === '@files' || atPart.startsWith('@files')) {
-        setAtCommandType('files');
-        setAtCommandQuery(atPart.replace('@files', ''));
-        loadFiles();
-      } else if (atPart === '@db' || atPart.startsWith('@db')) {
+
+      // Always load files so we can list them next to commands
+      loadFiles();
+
+      // Parse specific sub-commands if user types them (still supported)
+      const atPart = message.split(' ')[0];
+      if (atPart.startsWith('@load-file/')) {
+        setAtCommandType('load-file');
+        setAtCommandQuery(atPart.replace('@load-file/', ''));
+      } else if (atPart.startsWith('@db')) {
         setAtCommandType('db');
         setAtCommandQuery(atPart.replace('@db', ''));
         loadDatasources();
-      } else if (atPart.startsWith('@load-file/')) {
-        setAtCommandType('load-file');
-        setAtCommandQuery(atPart.replace('@load-file/', ''));
-        loadFiles();
+      } else if (atPart.startsWith('@files')) {
+        setAtCommandType('files');
+        setAtCommandQuery(atPart.replace('@files', ''));
       } else {
         setAtCommandType(null);
-        setAtCommandQuery('');
+        setAtCommandQuery(message.slice(1));
       }
     } else {
       setShowAtCommands(false);
@@ -313,6 +319,13 @@ export function ChatInput({
   };
 
   const handleFileSelect = (file: FileItem) => {
+    // Immediate load on selection (Cursor-like)
+    if (onAtCommand) {
+      onAtCommand(`@load-file/${file.filename}`, []);
+      setMessage('');
+      setShowAtCommands(false);
+      return;
+    }
     setMessage(`@load-file/${file.filename} `);
     setShowAtCommands(false);
     textareaRef.current?.focus();
@@ -358,41 +371,16 @@ export function ChatInput({
         </div>
       )}
 
-      {/* @ Command Autocomplete Dropdown */}
+      {/* @ Command Autocomplete Dropdown (Commands + Files) */}
       {showAtCommands && (
-        <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
-          {atCommandType === 'files' && (
-            <div className="p-3 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <FileText className="h-4 w-4" />
-                Available Files
-                {isLoadingFiles && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
-              </div>
+        <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
+          <div className="p-3 border-b border-gray-100">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <HelpCircle className="h-4 w-4" />
+              Commands
             </div>
-          )}
-          
-          {atCommandType === 'db' && (
-            <div className="p-3 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <Database className="h-4 w-4" />
-                Available Databases
-                {isLoadingDatasources && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
-              </div>
-            </div>
-          )}
-          
-          {atCommandType === 'load-file' && (
-            <div className="p-3 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <FileText className="h-4 w-4" />
-                Load File: {atCommandQuery}
-                {isLoadingFiles && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
-              </div>
-            </div>
-          )}
-
-          {/* Show @ commands when no specific type */}
-          {!atCommandType && filteredAtCommands.map((command, index) => {
+          </div>
+          {filteredAtCommands.map((command, index) => {
             const IconComponent = command.icon;
             return (
               <div
@@ -423,9 +411,41 @@ export function ChatInput({
               </div>
             );
           })}
-
-          {/* Show files list with filtering */}
-          {atCommandType === 'files' && availableFiles
+          <div className="p-3 border-b border-gray-100">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <FileText className="h-4 w-4" />
+              Files
+              {isLoadingFiles && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+            </div>
+          </div>
+          {/* Recent files from localStorage */}
+          {(() => {
+            try {
+              const recent: string[] = JSON.parse(localStorage.getItem('air_recent_files') || '[]');
+              if (recent.length > 0 && (!atCommandType || message.startsWith('@recent'))) {
+                return (
+                  <>
+                    <div className="px-4 py-2 text-xs text-gray-500">Recent</div>
+                    {recent.map((name) => (
+                      <div
+                        key={`recent-${name}`}
+                        className="flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+                        onClick={() => handleFileSelect({ file_id: name, filename: name, file_type: '', file_size: 0 })}
+                      >
+                        <FileText className="h-4 w-4 flex-shrink-0 text-amber-600" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm">{name}</div>
+                          <div className="text-xs text-gray-500">recent</div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                );
+              }
+            } catch {}
+            return null;
+          })()}
+          {availableFiles
             .filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase()))
             .map((file) => (
             <div
@@ -440,8 +460,7 @@ export function ChatInput({
               </div>
             </div>
           ))}
-
-          {/* Show datasources list */}
+          {/* Datasources section remains for completeness */}
           {atCommandType === 'db' && availableDatasources.map((datasource) => (
             <div
               key={datasource.id}
@@ -455,32 +474,14 @@ export function ChatInput({
               </div>
             </div>
           ))}
-
-          {/* Show filtered files for load-file */}
-          {atCommandType === 'load-file' && availableFiles
-            .filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase()))
-            .map((file) => (
-            <div
-              key={file.file_id}
-              className="flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
-              onClick={() => handleFileSelect(file)}
-            >
-              <FileText className="h-4 w-4 flex-shrink-0 text-blue-600" />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm">{file.filename}</div>
-                <div className="text-xs text-gray-500">{file.file_type} • {Math.round(file.file_size / 1024)}KB</div>
-              </div>
-            </div>
-          ))}
-
           {/* Empty states */}
-          {atCommandType === 'files' && !isLoadingFiles && availableFiles.length === 0 && (
+          {!isLoadingFiles && availableFiles.length === 0 && (
             <div className="p-4 text-center text-gray-500 text-sm">
               No files available. Upload a file first.
             </div>
           )}
 
-          {atCommandType === 'files' && !isLoadingFiles && availableFiles.length > 0 && availableFiles.filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase())).length === 0 && (
+          {!isLoadingFiles && availableFiles.length > 0 && availableFiles.filter(file => file.filename.toLowerCase().includes(atCommandQuery.toLowerCase())).length === 0 && (
             <div className="p-4 text-center text-gray-500 text-sm">
               No files match "{atCommandQuery}". Try a different search.
             </div>
