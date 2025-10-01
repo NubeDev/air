@@ -148,6 +148,193 @@ function QueryGenerateStep({
   );
 }
 
+// Child component: Create API (Report + Version)
+function ApiCreateStep({
+  scopeVersionId,
+  sql,
+  datasourceId,
+  onCreated,
+}: {
+  scopeVersionId?: number;
+  sql?: string;
+  datasourceId: string;
+  onCreated: (data: { reportId: number; versionId: number }) => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reportId, setReportId] = useState<number | null>(null);
+  const [versionId, setVersionId] = useState<number | null>(null);
+
+  const handleCreate = async () => {
+    if (!scopeVersionId || !sql) {
+      setError('Missing scope or SQL. Complete previous steps first.');
+      return;
+    }
+    try {
+      setCreating(true);
+      setError(null);
+      // 1) Create report
+      const key = `report_${Date.now()}`;
+      const title = `AIR Report ${new Date().toLocaleString()}`;
+      const repResp = await fetch('/v1/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, title }),
+      });
+      if (!repResp.ok) throw new Error(`Create report failed: ${repResp.statusText}`);
+      const report = await repResp.json();
+      setReportId(report.id);
+
+      // 2) Create report version with SQL
+      const defJSON = JSON.stringify({ sql });
+      const verResp = await fetch(`/v1/reports/${report.id}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope_version_id: scopeVersionId, datasource_id: datasourceId, def_json: defJSON }),
+      });
+      if (!verResp.ok) throw new Error(`Create report version failed: ${verResp.statusText}`);
+      const version = await verResp.json();
+      setVersionId(version.id);
+
+      onCreated({ reportId: report.id, versionId: version.id });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create API');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <Card className="p-6">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-2xl font-bold">Create API</CardTitle>
+        <Badge variant="secondary">Executable API</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="text-sm text-muted-foreground">Save as executable API</div>
+        {error && <div className="text-destructive text-sm">{error}</div>}
+        <div className="flex items-center gap-3">
+          <Button onClick={handleCreate} disabled={creating}>
+            {creating ? 'Creating…' : 'Create API'}
+          </Button>
+          {reportId && (
+            <Badge variant="outline" className="text-xs">Report #{reportId}{versionId ? ` v${versionId}` : ''}</Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Child component: Execute API with JSON Schema form
+function ExecuteStep({ reportId }: { reportId?: number }) {
+  const [schema, setSchema] = useState<any | null>(null);
+  const [params, setParams] = useState<Record<string, any>>({});
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!reportId) return;
+      try {
+        const res = await fetch(`/v1/reports/${reportId}/schema`);
+        if (res.ok) {
+          const j = await res.json();
+          setSchema(j.schema || null);
+        }
+      } catch {}
+    };
+    load();
+  }, [reportId]);
+
+  const handleChange = (key: string, value: any) => {
+    setParams(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleExecute = async () => {
+    if (!reportId) return;
+    try {
+      setRunning(true);
+      setError(null);
+      const resp = await fetch(`/v1/reports/${reportId}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params }),
+      });
+      if (!resp.ok) throw new Error(`Execute failed: ${resp.statusText}`);
+      const data = await resp.json();
+      setResults(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to execute');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const properties = schema?.properties || {};
+  const keys = Object.keys(properties);
+
+  return (
+    <Card className="p-6">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-2xl font-bold">Execute</CardTitle>
+        <Badge variant="secondary">Run & Inspect</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {schema ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {keys.map((k) => {
+              const p = properties[k] as any;
+              if (p && p.enum) {
+                return (
+                  <div key={k} className="space-y-2">
+                    <label className="text-sm font-medium">{p.title || k}</label>
+                    <select
+                      className="border rounded px-3 py-2 text-sm w-full bg-white"
+                      value={params[k] ?? ''}
+                      onChange={(e) => handleChange(k, e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {p.enum.map((v: string) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              }
+              return (
+                <div key={k} className="space-y-2">
+                  <label className="text-sm font-medium">{p?.title || k}</label>
+                  <input
+                    className="border rounded px-3 py-2 text-sm w-full"
+                    type={p?.format === 'date' ? 'date' : (p?.type === 'number' || p?.type === 'integer') ? 'number' : 'text'}
+                    value={params[k] ?? ''}
+                    onChange={(e) => handleChange(k, e.target.value)}
+                    placeholder={p?.description || ''}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">No schema available; you can still execute with empty parameters.</div>
+        )}
+
+        {error && <div className="text-destructive text-sm">{error}</div>}
+        <div className="flex justify-end">
+          <Button onClick={handleExecute} disabled={running || !reportId}>{running ? 'Executing…' : 'Run'}</Button>
+        </div>
+        {results && (
+          <Card className="p-4 bg-muted/50">
+            <pre className="text-xs whitespace-pre-wrap overflow-x-auto">{JSON.stringify(results, null, 2)}</pre>
+          </Card>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const workflowSteps = [
   { id: 'session_start', title: 'Start Session', description: 'Upload file or connect to database' },
   { id: 'learn', title: 'Learn Structure', description: 'Discover schema and sample data' },
@@ -258,6 +445,19 @@ export function WorkflowPage() {
             sqlModels={models.filter(m => m.capabilities.includes('sql'))}
             onGenerated={(d: { queryData: { sql: string; datasource_id: string } }) => handleStepComplete(d)}
           />
+        );
+      case 'api_create':
+        return (
+          <ApiCreateStep
+            scopeVersionId={workflowState.scopeVersionId}
+            sql={workflowState.queryData?.sql}
+            datasourceId={defaultDatasourceId}
+            onCreated={({ reportId }) => handleStepComplete({ apiData: { reportId } })}
+          />
+        );
+      case 'execute':
+        return (
+          <ExecuteStep reportId={workflowState.apiData?.reportId} />
         );
       default:
         return (
