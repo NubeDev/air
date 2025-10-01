@@ -725,3 +725,25 @@ func (s *ReportsService) RunReportByID(id uint, req store.RunReportRequest) (*st
 	}
 	return s.RunReport(report.Key, req)
 }
+
+// GetLatestReportSQLByReportID returns the SQL text from the latest version of a report
+func (s *ReportsService) GetLatestReportSQLByReportID(reportID uint) (string, error) {
+	// Find report
+	var report store.Report
+	if err := s.db.First(&report, reportID).Error; err != nil {
+		return "", fmt.Errorf("failed to find report: %w", err)
+	}
+
+	// Get latest report version
+	var reportVersion store.ReportVersion
+	if err := s.db.Where("report_id = ?", report.ID).Order("version DESC").First(&reportVersion).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return "", fmt.Errorf("no report version found")
+		}
+		return "", fmt.Errorf("failed to find report version: %w", err)
+	}
+
+	// Extract SQL from definition JSON
+	sqlText := extractSQLFromDef(reportVersion.DefJSON)
+	return sqlText, nil
+}

@@ -22,19 +22,17 @@ func GetReportSchema(reportsService *services.ReportsService) gin.HandlerFunc {
 			return
 		}
 
-		// Get the report to verify it exists
-		_, err = reportsService.GetReportByID(uint(reportID))
+		// Load latest SQL from report version and derive schema from placeholders
+		sqlText, err := reportsService.GetLatestReportSQLByReportID(uint(reportID))
 		if err != nil {
-			logger.LogError(logger.ServiceREST, "Failed to get report", err, map[string]interface{}{
+			logger.LogError(logger.ServiceREST, "Failed to get latest report SQL", err, map[string]interface{}{
 				"report_id": reportID,
 			})
-			c.JSON(http.StatusNotFound, gin.H{"error": "Report not found"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Report or SQL not found", "details": err.Error()})
 			return
 		}
 
-		// For now, generate a simple schema based on common parameters
-		// In production, this would parse the actual SQL from the report version
-		schema := generateDefaultSchema()
+		schema, _ := generateParameterSchema(sqlText)
 
 		c.JSON(http.StatusOK, gin.H{
 			"report_id": reportID,
